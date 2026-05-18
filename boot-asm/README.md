@@ -1,6 +1,6 @@
 # boot-asm
 
-Hand-written NASM source for the three boot-record blobs usbwin embeds.
+Hand-written NASM source for the boot-record blobs bootrec embeds.
 
 | File           | What it does                                                    |
 |----------------|-----------------------------------------------------------------|
@@ -8,7 +8,9 @@ Hand-written NASM source for the three boot-record blobs usbwin embeds.
 | `fat32_pbr.asm`| FAT32 PBR: read BPB, walk FAT, load `bootmgr`, jump.            |
 | `ntfs_pbr.asm` | NTFS PBR: same shape but walks NTFS structures.                 |
 
-Each file assembles to **exactly 512 bytes** of raw binary. The build is invoked from `crates/usbwin-boot/build.rs` when the `embed-boot-asm` feature is on.
+Each file assembles to **exactly 512 bytes** of raw binary. The build is
+invoked from bootrec's top-level `build.rs` when the `embed-boot-asm`
+feature is on.
 
 ## Manual build
 
@@ -19,15 +21,17 @@ make
 ls -l build/    # mbr.bin fat32_pbr.bin ntfs_pbr.bin, 512 bytes each
 ```
 
-## Verifying correctness
+## Verification
 
-Three layers, ordered by feedback-loop speed. See [`../docs/BOOT_RECORDS.md`](../docs/BOOT_RECORDS.md) for the full story.
+Three layers, ordered by feedback-loop speed. See [`docs/SPEC.md`](../docs/SPEC.md) §Verifiability hierarchy for the full story.
 
-1. **`cargo test`** in `crates/usbwin-boot/` — unit tests on the splice logic.
-2. **Byte equality vs ms-sys** (gated): `cargo test --features compare-mssys` with `USBWIN_MSSYS_BLOBS_DIR` set.
-3. **QEMU smoke test**: `cargo test --test qemu_boot` boots a synthetic FAT32 image whose first sector uses our PBR.
-4. **Real hardware**: `docs/HARDWARE_TESTS.md`.
+1. **`cargo test`** — unit tests on the splice logic and partition-table encoding.
+2. **Byte equality vs ms-sys** (gated): `cargo test --features compare-mssys` with `BOOTREC_MSSYS_BLOBS_DIR` set. *Eval framework in progress.*
+3. **QEMU smoke test**: `cargo test --test qemu_pbr --features embed-boot-asm -- --ignored` boots a synthetic FAT32 image whose first sector uses our PBR.
+4. **Real hardware**: dedicated checklist (TODO).
 
 ## Status
 
-**These files are stubs.** They assemble to 512 bytes of mostly-NOPs with the boot signature, enough to keep the build green. Real bootloader code is the next major chunk of work — see `docs/BOOT_RECORDS.md` for the contract each blob must satisfy.
+These files are the seed code carried over from the usbwin work. They are
+**not** at v1.0 quality yet — see `docs/SPEC.md` §Component breakdown for
+the v1.0 plan and the eval gates each variant must clear.

@@ -2,7 +2,7 @@
 //!
 //! Ignored by default. Run with:
 //!
-//!     cargo test -p usbwin-boot --test qemu_pbr --features embed-boot-asm -- --ignored
+//!     cargo test --test qemu_pbr --features embed-boot-asm -- --ignored
 //!
 //! Requires:
 //!   - `nasm` to assemble the boot blobs and the fake-bootmgr stub
@@ -10,12 +10,12 @@
 //!   - macOS (we use `hdiutil`, `newfs_msdos`, and Apple's `cp`)
 //!
 //! Flow:
-//!   1. Build the fake bootmgr (NASM, prints "USBWIN OK\n" to COM1, halts).
+//!   1. Build the fake bootmgr (NASM, prints "BOOTREC OK\n" to COM1, halts).
 //!   2. Create a 64 MiB raw FAT32 disk image with the fake bootmgr at root.
 //!   3. Read the freshly-formatted PBR, splice in our FAT32 boot blob using
 //!      `splice_fat32_pbr` (preserving the BPB), write it back.
 //!   4. Boot the image under qemu-system-i386 with -serial stdio -nographic.
-//!   5. Read serial output. Pass if it contains "USBWIN OK".
+//!   5. Read serial output. Pass if it contains "BOOTREC OK".
 //!
 //! This is the production verification loop for `fat32_pbr.asm` — when this
 //! test passes, our PBR is byte-correct enough to chain-load an x86 binary
@@ -35,15 +35,14 @@ fn fat32_pbr_loads_bootmgr_in_qemu() {
         return;
     }
 
-    if usbwin_boot::FAT32_PBR_BOOT.is_empty() {
+    if bootrec::FAT32_PBR_BOOT.is_empty() {
         panic!(
             "FAT32 PBR boot blob is empty (built without --features embed-boot-asm). \
-             Re-run: cargo test -p usbwin-boot --test qemu_pbr --features embed-boot-asm -- --ignored"
+             Re-run: cargo test --test qemu_pbr --features embed-boot-asm -- --ignored"
         );
     }
 
-    let workspace_root = workspace_root();
-    let boot_asm = workspace_root.join("boot-asm");
+    let boot_asm = repo_root().join("boot-asm");
 
     let fake_bootmgr = build_fake_bootmgr(&boot_asm).expect("building fake_bootmgr.bin");
 
@@ -54,8 +53,8 @@ fn fat32_pbr_loads_bootmgr_in_qemu() {
 
     let serial = boot_under_qemu(&image).expect("running qemu");
     assert!(
-        serial.contains("USBWIN OK"),
-        "qemu serial output missing 'USBWIN OK'. Got:\n---\n{serial}\n---"
+        serial.contains("BOOTREC OK"),
+        "qemu serial output missing 'BOOTREC OK'. Got:\n---\n{serial}\n---"
     );
 }
 
@@ -81,10 +80,8 @@ fn which(tool: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn workspace_root() -> PathBuf {
-    // crates/usbwin-boot/tests/qemu_pbr.rs -> walk up to workspace root
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest.parent().unwrap().parent().unwrap().to_path_buf()
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
 fn build_fake_bootmgr(boot_asm: &Path) -> Result<PathBuf, String> {
@@ -155,7 +152,7 @@ fn splice_our_pbr(image: &Path) -> Result<(), String> {
     let mut existing = [0u8; 512];
     file.read_exact(&mut existing)
         .map_err(|e| format!("reading existing PBR: {e}"))?;
-    let spliced = usbwin_boot::splice_fat32_pbr(&existing, usbwin_boot::FAT32_PBR_BOOT)
+    let spliced = bootrec::splice_fat32_pbr(&existing, bootrec::FAT32_PBR_BOOT)
         .map_err(|e| format!("splice_fat32_pbr: {e}"))?;
     file.seek(SeekFrom::Start(0))
         .map_err(|e| format!("seek: {e}"))?;
@@ -214,7 +211,7 @@ fn boot_under_qemu(image: &Path) -> Result<String, String> {
 }
 
 fn tempdir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("usbwin-qemu-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("bootrec-qemu-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

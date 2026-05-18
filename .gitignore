@@ -1,0 +1,5 @@
+target/
+boot-asm/build/
+.DS_Store
+*.swp
+*.swo

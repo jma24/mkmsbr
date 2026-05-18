@@ -14,8 +14,7 @@ use std::process::Command;
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
-    let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
-    let asm_dir = workspace_root.join("boot-asm");
+    let asm_dir = manifest_dir.join("boot-asm");
 
     let blobs = ["mbr", "fat32_pbr", "ntfs_pbr"];
 
@@ -43,7 +42,6 @@ fn main() {
                 panic!("nasm failed for {blob}.asm");
             }
         } else {
-            // Empty placeholder so include_bytes! compiles.
             fs::write(&out_path, []).unwrap();
         }
     }

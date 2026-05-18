@@ -1,7 +1,7 @@
 # Assemble the three boot-record blobs to 512-byte raw binaries.
 # Output: build/{mbr,fat32_pbr,ntfs_pbr}.bin
 #
-# Build is also invoked from crates/usbwin-boot/build.rs directly via `nasm`
+# Build is also invoked from bootrec's top-level build.rs directly via `nasm`
 # when the `embed-boot-asm` cargo feature is on. This Makefile exists for
 # manual iteration during NASM development.
 

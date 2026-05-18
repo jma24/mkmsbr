@@ -1,10 +1,10 @@
-; fat32_pbr.asm — usbwin FAT32 Partition Boot Record.
+; fat32_pbr.asm — bootrec FAT32 Partition Boot Record.
 ;
 ; Loaded by the MBR at 0000:7C00 in real mode, with DL = boot drive.
 ;
 ; Layout:
 ;   bytes  0..2   = JMP short body / NOP
-;   bytes  3..89  = BPB (RUNTIME data; preserved by usbwin_boot::pbr::
+;   bytes  3..89  = BPB (RUNTIME data; preserved by bootrec::pbr::
 ;                   splice_fat32_pbr from the freshly-formatted partition)
 ;   bytes 90..509 = boot code
 ;   bytes 510..511= 0x55 0xAA
@@ -232,7 +232,7 @@ next_cluster:
 
 ; die: AL = single-character error code to print via BIOS teletype.
 ; Also pulses COM1 with the same character for QEMU/serial diagnostics.
-; Error code legend (see docs/BOOT_RECORDS.md):
+; Error code legend (single-character codes; we have ~420 boot-code bytes):
 ;   '1' = BOOTMGR not found in FAT32 root directory
 ;   '2' = INT 13h disk read failed
 die:

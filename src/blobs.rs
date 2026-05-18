@@ -1,7 +1,7 @@
 //! The embedded boot-record blobs. Assembled at build time from `boot-asm/`
 //! and `include_bytes!`'d here. Without the `embed-boot-asm` feature these
-//! are empty slices — any code path that needs them will surface a clear
-//! error at runtime ("usbwin was built without boot blobs; rebuild with
+//! are empty slices — any code path that needs them surfaces a clear
+//! error at runtime ("bootrec was built without boot blobs; rebuild with
 //! --features embed-boot-asm").
 
 pub const MBR_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mbr.bin"));

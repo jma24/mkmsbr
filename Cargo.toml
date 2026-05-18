@@ -1,27 +1,28 @@
 [package]
-name = "usbwin-boot"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-repository.workspace = true
-authors.workspace = true
-description = "MBR/GPT layout, FAT32 PBR splice, and the embedded boot blobs."
+name = "bootrec"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT"
+repository = "https://github.com/jma24/bootrec"
+authors = ["John Appleby <johnmichaelappleby@gmail.com>"]
+description = "Clean-room library + CLI for Microsoft-compatible MBR and FAT32/NTFS boot records."
 build = "build.rs"
+
+[lib]
+name = "bootrec"
+path = "src/lib.rs"
 
 [features]
 # When set, build.rs invokes NASM to compile boot-asm/*.asm into 512-byte
-# binaries that get include_bytes!'d. Without the feature, the embedded blobs
-# are empty placeholders and any Windows-mode pipeline will error at runtime.
-#
-# Default is OFF in the scaffold so `cargo check` works on a machine without
-# NASM. Will be flipped to default-on once the .asm sources are real.
+# binaries that get include_bytes!'d. Without the feature, the embedded
+# blobs are empty placeholders and any code path that consumes them
+# surfaces a clear runtime error.
 embed-boot-asm = []
 
-# Gates the byte-equality test vs ms-sys blobs. Requires
-# USBWIN_MSSYS_BLOBS_DIR env var pointing at a local ms-sys checkout.
+# Gates the byte-equality test vs ms-sys reference blobs. Requires
+# BOOTREC_MSSYS_BLOBS_DIR env var pointing at a local ms-sys checkout.
 compare-mssys = []
 
 [dependencies]
-usbwin-core.workspace = true
-thiserror.workspace = true
+thiserror = "1"

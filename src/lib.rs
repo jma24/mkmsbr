@@ -1,9 +1,11 @@
 //! Boot record assembly. Pure byte manipulation; no I/O.
 //!
 //! The single most important function in this crate is `splice_fat32_pbr`:
-//! it takes the existing PBR (which `newfs_msdos` just populated with the
-//! correct BPB for this specific partition) and splices in our boot code
-//! while preserving bytes 3..89 (the BPB). See docs/BOOT_RECORDS.md.
+//! it takes the existing PBR (which a freshly-formatted partition holds,
+//! e.g. what `newfs_msdos` writes) and splices in our boot code while
+//! preserving bytes 3..89 (the BPB — the filesystem-geometry block that
+//! describes this specific volume). Replacing the BPB with a template
+//! breaks boot; preserving it is the whole point of this crate.
 
 pub mod blobs;
 pub mod mbr;

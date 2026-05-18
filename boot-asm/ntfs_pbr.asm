@@ -1,4 +1,4 @@
-; ntfs_pbr.asm — usbwin NTFS Partition Boot Record.
+; ntfs_pbr.asm — bootrec NTFS Partition Boot Record.
 ;
 ; STUB. Real implementation pending. The contract:
 ;
@@ -8,7 +8,7 @@
 ;   4. Read bootmgr into memory and jump to it.
 ;   5. Total binary size: exactly 512 bytes, with 0x55 0xAA at offset 510.
 ;
-; Reference: docs/BOOT_RECORDS.md.
+; Reference: docs/SPEC.md §Component breakdown (item 5).
 
 BITS 16
 ORG 0x7C00
