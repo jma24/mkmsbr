@@ -1,19 +1,35 @@
 [package]
 name = "mkmsbr"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT"
 repository = "https://github.com/jma24/mkmsbr"
 authors = ["John Appleby <johnmichaelappleby@gmail.com>"]
 description = "Clean-room library + CLI for Microsoft-compatible MBR and FAT32/NTFS boot records."
+readme = "README.md"
+keywords = ["boot", "mbr", "fat32", "ntfs", "windows"]
+categories = ["filesystem", "command-line-utilities", "os::windows-apis"]
 build = "build.rs"
+exclude = [
+    "boot-asm/**/*.bin",
+    "tests/real_content/**",
+    ".claude/**",
+    "docs/USBWIN_NTLDR_FINDINGS_2026_05_19.md",
+]
 
 [lib]
 name = "mkmsbr"
 path = "src/lib.rs"
 
+[[bin]]
+name = "mkmsbr"
+path = "src/bin/mkmsbr.rs"
+required-features = ["embed-boot-asm"]
+
 [features]
+default = ["embed-boot-asm"]
+
 # When set, build.rs invokes NASM to compile boot-asm/*.asm into 512-byte
 # binaries that get include_bytes!'d. Without the feature, the embedded
 # blobs are empty placeholders and any code path that consumes them
@@ -26,3 +42,4 @@ compare-mssys = []
 
 [dependencies]
 thiserror = "1"
+clap = { version = "4", features = ["derive"] }

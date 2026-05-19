@@ -16,7 +16,8 @@ pub use blobs::{
     MBR_WIN7_BOOT, MBR_XP_BOOT, NTFS_PBR_BOOTMGR_MULTI_BOOT, XP_SETUP_CHAIN_BOOTSECT_BOOT,
 };
 pub use mbr::{
-    build_mbr, mbr_win7, mbr_xp, MbrError, PartitionEntry, PartitionType, PARTITION_START_LBA,
+    build_mbr, mbr_win7, mbr_xp, splice_mbr, MbrError, PartitionEntry, PartitionType,
+    PARTITION_START_LBA,
 };
 pub use pbr::{
     build_xp_setup_chain_bootsect, splice_fat32_pbr, splice_fat32_pbr_multi,

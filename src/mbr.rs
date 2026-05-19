@@ -24,6 +24,9 @@ pub enum MbrError {
     #[error("disk too small for partition: {disk_sectors} sectors, need > {partition_start}")]
     DiskTooSmall { disk_sectors: u64, partition_start: u64 },
 
+    #[error("existing MBR sector is {got} bytes; expected 512")]
+    ExistingTooShort { got: usize },
+
     #[error("MBR boot blobs were not embedded; rebuild with --features embed-boot-asm")]
     NotEmbedded,
 }
@@ -171,6 +174,34 @@ pub fn build_mbr(boot_code: &[u8], disk_sectors: u64) -> Result<[u8; 512], MbrEr
     Ok(mbr)
 }
 
+/// Replace boot code in an existing MBR while preserving the partition
+/// table, disk signature, and 0x55AA marker. Bytes 0..440 are overwritten
+/// with `boot[..440]`; bytes 440..510 (NT disk signature + optional
+/// copy-protect + four partition entries) are carried through from
+/// `existing`; bytes 510..512 are forced to 0x55 0xAA.
+///
+/// This is the ms-sys-compatible "drop a boot record onto an already-
+/// partitioned disk" operation. Use this when the device already has the
+/// partition layout the user wants; use [`build_mbr`] / [`mbr_xp`] /
+/// [`mbr_win7`] when constructing a fresh disk from scratch.
+pub fn splice_mbr(existing: &[u8], boot: &[u8]) -> Result<[u8; 512], MbrError> {
+    if boot.is_empty() {
+        return Err(MbrError::NotEmbedded);
+    }
+    if boot.len() < 440 {
+        return Err(MbrError::BootCodeTooShort { got: boot.len() });
+    }
+    if existing.len() < 512 {
+        return Err(MbrError::ExistingTooShort { got: existing.len() });
+    }
+    let mut out = [0u8; 512];
+    out[..440].copy_from_slice(&boot[..440]);
+    out[440..510].copy_from_slice(&existing[440..510]);
+    out[510] = 0x55;
+    out[511] = 0xAA;
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,6 +291,60 @@ mod tests {
     fn mbr_rejects_disk_too_small() {
         let err = build_mbr(&fake_boot(), 1024).unwrap_err();
         assert!(matches!(err, MbrError::DiskTooSmall { .. }));
+    }
+
+    #[test]
+    fn splice_mbr_replaces_boot_code_only() {
+        let mut existing = [0u8; 512];
+        // Distinctive partition table + disk signature in bytes 440..510.
+        for (i, b) in existing[440..510].iter_mut().enumerate() {
+            *b = (i as u8).wrapping_add(0x40);
+        }
+        existing[510] = 0x55;
+        existing[511] = 0xAA;
+
+        let boot: Vec<u8> = (0..440).map(|i| (i & 0xFF) as u8).collect();
+        let out = splice_mbr(&existing, &boot).unwrap();
+
+        assert_eq!(&out[..440], &boot[..]);
+        assert_eq!(&out[440..510], &existing[440..510]);
+        assert_eq!(out[510], 0x55);
+        assert_eq!(out[511], 0xAA);
+    }
+
+    #[test]
+    fn splice_mbr_forces_signature_even_if_missing() {
+        let mut existing = [0u8; 512];
+        for b in existing[440..510].iter_mut() {
+            *b = 0x42;
+        }
+        // existing[510..512] left as zeros
+        let out = splice_mbr(&existing, &fake_boot()).unwrap();
+        assert_eq!(out[510], 0x55);
+        assert_eq!(out[511], 0xAA);
+    }
+
+    #[test]
+    fn splice_mbr_rejects_short_existing() {
+        assert!(matches!(
+            splice_mbr(&[0u8; 100], &fake_boot()),
+            Err(MbrError::ExistingTooShort { got: 100 })
+        ));
+    }
+
+    #[test]
+    fn splice_mbr_rejects_short_boot() {
+        let existing = [0u8; 512];
+        assert!(matches!(
+            splice_mbr(&existing, &[0u8; 100]),
+            Err(MbrError::BootCodeTooShort { got: 100 })
+        ));
+    }
+
+    #[test]
+    fn splice_mbr_rejects_empty_boot() {
+        let existing = [0u8; 512];
+        assert!(matches!(splice_mbr(&existing, &[]), Err(MbrError::NotEmbedded)));
     }
 
     #[test]
