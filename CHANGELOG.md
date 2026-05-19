@@ -4,6 +4,17 @@ All notable changes to mkmsbr are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-05-19
+
+### Fixed
+
+- **`cargo install mkmsbr` no longer requires `nasm` on the user's
+  host.** The published crate now ships pre-assembled boot-code blobs
+  in `blobs-prebuilt/`; `build.rs` uses nasm if available (developer
+  path) and falls back to the prebuilt bytes otherwise (install path).
+  Prior 1.0.0 hard-failed during `cargo install` on any host without
+  nasm. The bytes shipped match the `boot-asm/` source at the same tag.
+
 ## [1.0.0] — 2026-05-19
 
 First published release. Clean-room MIT replacement for `ms-sys` for
@@ -89,4 +100,5 @@ Four of five v1.0 variants ship at their spec-defined eval target (see
   newtype from [docs/SPEC.md](docs/SPEC.md) §Library scope is filed
   as cosmetic polish.
 
+[1.0.1]: https://github.com/jma24/mkmsbr/releases/tag/v1.0.1
 [1.0.0]: https://github.com/jma24/mkmsbr/releases/tag/v1.0.0

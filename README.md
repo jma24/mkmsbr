@@ -40,9 +40,10 @@ cargo install mkmsbr
 cargo add mkmsbr
 ```
 
-Building from source needs [NASM](https://nasm.us/) for the boot-code
-assembly (`brew install nasm`); `cargo install` invokes it via the build
-script.
+The published crate ships pre-assembled boot-code blobs in
+`blobs-prebuilt/`, so `cargo install` works without nasm. Building from
+the git source (`cargo build` in a checkout) needs nasm (`brew install
+nasm` on macOS) so build.rs can re-assemble from `boot-asm/*.asm`.
 
 ## Usage
 
@@ -149,18 +150,21 @@ and the XP-Setup BOOTSECT.DAT chain loader; ms-sys is now an opt-in
 ## Build
 
 ```sh
-brew install nasm
-
 # Default build (library + CLI + embedded boot blobs):
 cargo build --release
-
-# Library only, without boot blobs — cargo check on machines without NASM:
-cargo check --no-default-features
 ```
 
-The `embed-boot-asm` feature is on by default and invokes NASM to
-assemble `boot-asm/*.asm`. The CLI binary requires it; the library can
-be built without it for hosts that only need the API types.
+The `embed-boot-asm` feature is on by default. The build script uses
+nasm to assemble `boot-asm/*.asm` if it's on PATH; otherwise it falls
+back to the prebuilt blobs in `blobs-prebuilt/`. Developers editing
+the NASM sources should install nasm (`brew install nasm` on macOS) so
+build.rs picks up their changes; everyone else can build without it.
+
+Library-only build for hosts that don't need the assembled blobs at all:
+
+```sh
+cargo check --no-default-features
+```
 
 ## Test
 
