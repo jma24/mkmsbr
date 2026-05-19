@@ -57,9 +57,6 @@ What works now:
 
 Doesn't work yet:
 
-- Real-content QEMU boot tests (Layer 3) — fixtures stage cleanly via
-  `scripts/build_l3_fixtures.sh`, but the QEMU pass/fail signal for real
-  NTLDR / bootmgr is still an open question (see `docs/BACKLOG.md`)
 - Layer-4 (real-hardware boot) — only the user can run that pipeline
 - `ntfs_pbr_bootmgr` variant
 - A proper CLI binary (library + tests only for now)
@@ -69,6 +66,10 @@ Works:
 
 - ms-sys byte-distance oracle (Layer 1) across MBR + single/multi-sector
   PBR variants — see `tests/layer1_oracle.rs`
+- Real-content QEMU boot tests (Layer 3) against real NTLDR and bootmgr
+  — see `tests/qemu_pbr_real.rs`. Pass/fail signal is guest block-read
+  count via `qemu -trace blk_co_preadv`. Fixtures stage via
+  `scripts/build_l3_fixtures.sh`.
 
 ## Build
 
@@ -104,10 +105,16 @@ never redistributed):
 scripts/build_l3_fixtures.sh \
     --xp-iso /path/to/winxp_sp3.iso \
     --win7-iso /path/to/win7.iso
+
+cargo test --test qemu_pbr_real --features embed-boot-asm -- --ignored
 ```
 
-The L3 smoke test that consumes these is still TODO — the pass/fail signal
-for real Microsoft loaders is the open work. See `docs/BACKLOG.md`.
+The L3 harness boots a FAT32 image with the real loader file under
+qemu-system-i386, records `blk_co_preadv` trace events, and passes if
+the recorded read count exceeds the threshold — strong evidence the
+real loader took over from our PBR rather than the PBR halting first.
+Set `BOOTREC_L3_MIN_READS=<n>` to override the default threshold.
+Tests skip gracefully if fixtures are absent.
 
 ## Clean-room
 

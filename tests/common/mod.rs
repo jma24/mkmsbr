@@ -5,3 +5,4 @@
 #![allow(dead_code)] // Helpers may be used by some test binaries and not others.
 
 pub mod oracle;
+pub mod qemu_trace;

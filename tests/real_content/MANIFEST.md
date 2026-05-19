@@ -49,12 +49,14 @@ BCD ≈ 256 KiB), you almost certainly have a valid alternate edition.
 
 ## How the fixtures are consumed
 
-The Layer-3 QEMU smoke tests (TODO: `tests/qemu_pbr_real.rs`) format
-a FAT32 image, `mcopy` these real binaries onto it, splice our PBR
-through `splice_fat32_pbr` / `splice_fat32_pbr_multi`, and boot in
-QEMU. Success criterion is still open — see `docs/BACKLOG.md` under
-Layer 3 — likely "real loader issued > N disk reads" measured via
-qemu's trace events.
+The Layer-3 QEMU smoke tests (`tests/qemu_pbr_real.rs`) format a FAT32
+image, `mcopy` these real binaries onto it, splice our PBR through
+`splice_fat32_pbr` / `splice_fat32_pbr_multi`, and boot in QEMU.
+Success criterion: guest block-read count via `qemu -trace blk_co_preadv`
+exceeds a threshold (default 50; override with `BOOTREC_L3_MIN_READS`).
+A successful chainload reads the loader file off FAT plus the real
+loader's own subsequent reads — hundreds to thousands in practice.
+A halted PBR issues only single- to double-digit reads.
 
 ## Why we don't ship our own minimal NTLDR substitute
 
