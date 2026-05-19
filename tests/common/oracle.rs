@@ -124,6 +124,17 @@ pub fn ms_sys_fat32_ntldr_pbr() -> Result<[u8; 512], String> {
     fat32_pbr_sector0(&["--fat32nt"])
 }
 
+/// Run ms-sys --fat32pe and return the first 16 sectors (8 KiB) of the
+/// resulting PBR. Multi-sector BOOTMGR variant: sector 0 carries the BPB
+/// + stage-1 boot code; sectors 1..15 carry continuation stages with
+/// (historically) zero-filled gaps between them. Caller decides which
+/// sectors to compare against; the alignment between our 2-sector layout
+/// and ms-sys's 16-sector layout is reported by the test, not asserted
+/// here. Per spec §Clean-room protocol we consult ms-sys's output only.
+pub fn ms_sys_fat32_bootmgr_pbr_multi() -> Result<[u8; 8192], String> {
+    fat32_pbr_sectors_0_15(&["--fat32pe"])
+}
+
 fn fat32_pbr_sector0(args: &[&str]) -> Result<[u8; 512], String> {
     use std::io::Read;
     let tmp = std::env::temp_dir().join(format!(
@@ -158,6 +169,40 @@ fn fat32_pbr_sector0(args: &[&str]) -> Result<[u8; 512], String> {
     // Step 4: read sector 0.
     let mut f = std::fs::File::open(&tmp).map_err(|e| format!("open: {e}"))?;
     let mut buf = [0u8; 512];
+    f.read_exact(&mut buf).map_err(|e| format!("read: {e}"))?;
+    let _ = std::fs::remove_file(&tmp);
+    Ok(buf)
+}
+
+fn fat32_pbr_sectors_0_15(args: &[&str]) -> Result<[u8; 8192], String> {
+    use std::io::Read;
+    let tmp = std::env::temp_dir().join(format!(
+        "bootrec-pbr-oracle-multi-{}-{}",
+        args[0].trim_start_matches('-'),
+        std::process::id()
+    ));
+    std::fs::write(&tmp, vec![0u8; 64 * 1024 * 1024])
+        .map_err(|e| format!("seed image: {e}"))?;
+
+    let fmt = std::process::Command::new("mformat")
+        .args(["-F", "-i"])
+        .arg(&tmp)
+        .args(["-v", "BOOTREC", "::"])
+        .output()
+        .map_err(|e| format!("mformat: {e}"))?;
+    if !fmt.status.success() {
+        return Err(format!(
+            "mformat failed: {}",
+            String::from_utf8_lossy(&fmt.stderr)
+        ));
+    }
+
+    let mut full_args: Vec<&str> = args.to_vec();
+    full_args.push("-f");
+    run_ms_sys(&full_args, &tmp)?;
+
+    let mut f = std::fs::File::open(&tmp).map_err(|e| format!("open: {e}"))?;
+    let mut buf = [0u8; 8192];
     f.read_exact(&mut buf).map_err(|e| format!("read: {e}"))?;
     let _ = std::fs::remove_file(&tmp);
     Ok(buf)

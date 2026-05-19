@@ -133,11 +133,83 @@ fn fat32_pbr_ntldr_distance_from_mssys() {
     assert_distance("fat32_pbr_ntldr", "--fat32nt (sector 0)", &ours, &theirs);
 }
 
-// TODO: PBR byte-equality eval (fat32_pbr_bootmgr vs ms-sys --fat32pe).
-// Multi-sector: ms-sys writes sectors 0, 1, and 12 (or thereabouts; needs
-// confirmation against ms-sys source via the spec's "consult their output,
-// never their source" rule). The oracle needs to format a FAT32 image
-// first, run ms-sys against it, then read back the touched sectors and
-// strip the per-partition BPB so we compare boot-code regions only.
-// Wire up alongside the `fat32_pbr_bootmgr` variant implementation.
+/// Multi-sector eval. Our blob is 2 sectors; ms-sys's `--fat32pe` layout
+/// is 16. Sector 0 reuses the same boot-code-regions split as the
+/// single-sector tests above. Sector 1 has no BPB, so the comparison is
+/// over all 512 bytes — but the alignment between *our* sector 1 and one
+/// of ms-sys's sectors 1..15 is the open question the test answers: it
+/// reports the Hamming distance against every non-zero ms-sys sector and
+/// fails only if the closest match is suspiciously low (i.e. potential
+/// copying — clean-room mechanism #4). The "true" alignment will be
+/// whichever sector has the lowest non-zero distance, surfaced in the
+/// eprintln log for the developer to read.
+#[test]
+#[ignore]
+fn fat32_pbr_bootmgr_multi_distance_from_mssys() {
+    if bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT.is_empty() {
+        panic!(
+            "FAT32_PBR_BOOTMGR_MULTI_BOOT is empty (built without --features embed-boot-asm). \
+             Re-run with --features \"embed-boot-asm compare-mssys\"."
+        );
+    }
+    assert!(
+        bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT.len() >= 1024,
+        "multi-sector blob is {} bytes; expected >= 1024",
+        bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT.len()
+    );
+
+    let theirs_16 = oracle::ms_sys_fat32_bootmgr_pbr_multi()
+        .unwrap_or_else(|e| panic!("ms-sys multi-sector PBR oracle failed: {e}"));
+
+    // --- Sector 0: same boot-code regions as the single-sector eval. ---
+    let mut our_s0 = [0u8; 512];
+    our_s0.copy_from_slice(&bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT[0..512]);
+    let mut their_s0 = [0u8; 512];
+    their_s0.copy_from_slice(&theirs_16[0..512]);
+    let ours_regions = pbr_bootcode_regions(&our_s0);
+    let theirs_regions = pbr_bootcode_regions(&their_s0);
+    assert_distance(
+        "fat32_pbr_bootmgr_multi",
+        "--fat32pe (sector 0, boot-code regions)",
+        &ours_regions,
+        &theirs_regions,
+    );
+
+    // --- Sector 1: full 512 bytes against each non-zero ms-sys sector. ---
+    let our_s1 = &bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT[512..1024];
+    let mut best: Option<(usize, usize)> = None; // (distance, sector_idx)
+    eprintln!("fat32_pbr_bootmgr_multi sector 1 vs ms-sys --fat32pe sectors 1..15:");
+    for i in 1..16usize {
+        let ms_sector = &theirs_16[i * 512..(i + 1) * 512];
+        let nz = ms_sector.iter().filter(|&&b| b != 0).count();
+        if nz == 0 {
+            eprintln!("  sector {i:>2}: ms-sys sector is all-zero (skipped)");
+            continue;
+        }
+        let diffs = our_s1.iter().zip(ms_sector.iter()).filter(|(a, b)| a != b).count();
+        eprintln!(
+            "  sector {i:>2}: Hamming={diffs:>3}/512 (ms-sys sector has {nz} non-zero bytes)"
+        );
+        match best {
+            Some((d, _)) if diffs >= d => {}
+            _ => best = Some((diffs, i)),
+        }
+    }
+    let (best_diffs, best_idx) = best.expect(
+        "ms-sys --fat32pe produced no non-zero sectors in 1..15 — unexpected layout, \
+         this test's assumptions need revisiting",
+    );
+    eprintln!(
+        "fat32_pbr_bootmgr_multi: best sector-1 alignment is ms-sys sector {best_idx} \
+         (Hamming={best_diffs}/512)"
+    );
+    if best_diffs < SUSPICIOUSLY_LOW {
+        panic!(
+            "[fat32_pbr_bootmgr_multi] our sector 1 is suspiciously close to ms-sys sector \
+             {best_idx} (Hamming={best_diffs} < {SUSPICIOUSLY_LOW}). Per docs/SPEC.md \
+             §Clean-room mechanisms #4 this triggers manual review of \
+             boot-asm/fat32_pbr_bootmgr/sector1.asm."
+        );
+    }
+}
 
