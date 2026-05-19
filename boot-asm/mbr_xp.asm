@@ -1,4 +1,14 @@
-; mbr.asm — bootrec Master Boot Record.
+; mbr_xp.asm — bootrec Master Boot Record, Windows 2000/XP/2003 variant.
+;
+; Spec-compliance map (clean-room — see docs/PROVENANCE.md):
+;   - INT 13h fn 0x42 (LBA): Phoenix BIOS Interface Reference
+;   - Partition table layout: winioctl.h / MBR convention
+;   - Relocation 0x7C00 -> 0x600: standard MBR pattern (any BIOS textbook)
+;
+; Differences vs the future mbr_win7.asm:
+;   - No GPT-protective-MBR safety check (XP predates GPT support)
+;   - No disk-signature verification (Win 7+ tracks the 4-byte signature
+;     at offset 0x1B8 of the MBR to detect drive moves; XP doesn't)
 ;
 ; Loaded by BIOS at 0000:7C00 in real mode. The BIOS hands us:
 ;   DL = boot drive number (e.g. 0x80 for first hard disk / USB stick)
@@ -39,7 +49,15 @@ start:
     mov di, 0x0600
     mov cx, 256             ; 256 words = 512 bytes
     rep movsw
-    jmp 0x0000:relocated
+    ; Far-jump into the RELOCATED copy. NASM resolves `relocated` to its
+    ; ORG-base address (~0x7C22); we subtract 0x7C00 and add 0x0600 to
+    ; redirect into the new copy. Without this delta, execution continues
+    ; in the original at 0x7C2x while the code thinks it's at 0x062x —
+    ; absolute addresses (partition table at 0x07BE, message strings)
+    ; then point into BIOS data area, the active-partition scan misses,
+    ; and the MBR halts silently with "No active partition" on BIOS
+    ; teletype (invisible on serial).
+    jmp 0x0000:(relocated - 0x7C00 + 0x0600)
 
 relocated:
     ; Find the active partition entry. Partition table starts at

@@ -8,11 +8,11 @@
 NASM ?= nasm
 NASM_FLAGS := -f bin
 
-SRC := mbr.asm fat32_pbr.asm ntfs_pbr.asm
+SRC := mbr_xp.asm fat32_pbr.asm ntfs_pbr.asm
 OUT := $(SRC:%.asm=build/%.bin)
 
-# Test fixtures (not shipped, only used by tests/qemu_pbr.rs).
-TEST_SRC := fake_bootmgr.asm
+# Test fixtures (not shipped, only used by tests/qemu_*.rs).
+TEST_SRC := fake_bootmgr.asm fake_pbr.asm
 TEST_OUT := $(TEST_SRC:%.asm=build/%.bin)
 
 all: $(OUT)

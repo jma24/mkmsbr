@@ -4,9 +4,13 @@ Hand-written NASM source for the boot-record blobs bootrec embeds.
 
 | File           | What it does                                                    |
 |----------------|-----------------------------------------------------------------|
-| `mbr.asm`      | Generic MBR: find the active primary partition, chain-load it.  |
+| `mbr_xp.asm`   | Win 2000/XP/2003 MBR: find active primary partition, chain-load.|
 | `fat32_pbr.asm`| FAT32 PBR: read BPB, walk FAT, load `bootmgr`, jump.            |
 | `ntfs_pbr.asm` | NTFS PBR: same shape but walks NTFS structures.                 |
+
+Future variants per `docs/SPEC.md` §Component breakdown: `mbr_win7.asm`,
+`fat32_pbr_ntldr.asm`, `fat32_pbr_bootmgr/` (multi-sector),
+`ntfs_pbr_bootmgr/`.
 
 Each file assembles to **exactly 512 bytes** of raw binary. The build is
 invoked from bootrec's top-level `build.rs` when the `embed-boot-asm`

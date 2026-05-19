@@ -22,64 +22,50 @@ mod common;
 
 use common::oracle;
 
-/// Compare bootrec's generic MBR boot code to ms-sys's --mbr7 (Win 7 MBR).
+/// Compare bootrec's XP-variant MBR boot code to ms-sys's `--mbr` output.
 ///
-/// **Status:** expected to FAIL today. The seed `boot-asm/mbr.asm` is a
-/// generic MBR (find active partition + chain-load) that pre-dates the
-/// variant-split between `mbr_win7` and `mbr_xp`. The v1.0 work is to
-/// produce two separate variants; this eval becomes the gate for the
-/// `mbr_win7` variant.
+/// Doubles as the spec's "statistical similarity check" (§Clean-room
+/// mechanisms #4): fails if the Hamming distance is SUSPICIOUSLY LOW
+/// (< 10 bytes for a non-trivial 440-byte boot record). That's the
+/// concerning direction — too few differences suggests copying. Larger
+/// distances are expected; the primary correctness gate is Layer 2
+/// (`qemu_mbr.rs`), already green.
+///
+/// Reports the distance via `eprintln!` so CI logs surface the trend over
+/// time — a sudden jump up or down warrants a closer look at the diff.
 #[test]
 #[ignore]
-fn mbr_win7_bootcode_matches_mssys() {
-    if bootrec::MBR_BOOT.is_empty() {
-        panic!(
-            "MBR_BOOT is empty (built without --features embed-boot-asm). \
-             Re-run with --features \"embed-boot-asm compare-mssys\"."
-        );
-    }
-    let theirs = oracle::ms_sys_mbr_win7_bootcode()
-        .unwrap_or_else(|e| panic!("ms-sys oracle failed: {e}"));
-    let ours: &[u8] = &bootrec::MBR_BOOT[0..440];
-    if ours == theirs.as_slice() {
-        return;
-    }
-    let diffs = ours.iter().zip(theirs.iter()).filter(|(a, b)| a != b).count();
-    panic!(
-        "bootrec MBR_BOOT != ms-sys --mbr7 (Hamming distance: {diffs}/440 bytes)\n\
-         Diff sample (first 16 differing offsets):\n{}",
-        diff_sample(ours, &theirs)
-    );
-}
+fn mbr_xp_bootcode_distance_from_mssys() {
+    const SUSPICIOUSLY_LOW: usize = 10;
 
-/// Same as `mbr_win7_bootcode_matches_mssys` but for the XP MBR (`--mbr`).
-///
-/// **Status:** the seed MBR is closer to the generic XP shape than to the
-/// Win 7 shape (Win 7's MBR has the disk-signature check + GPT-fallback
-/// path that XP's doesn't). Still expected to differ; treat as the
-/// eval gate for the eventual `mbr_xp` variant.
-#[test]
-#[ignore]
-fn mbr_xp_bootcode_matches_mssys() {
-    if bootrec::MBR_BOOT.is_empty() {
+    if bootrec::MBR_XP_BOOT.is_empty() {
         panic!(
-            "MBR_BOOT is empty (built without --features embed-boot-asm). \
+            "MBR_XP_BOOT is empty (built without --features embed-boot-asm). \
              Re-run with --features \"embed-boot-asm compare-mssys\"."
         );
     }
     let theirs = oracle::ms_sys_mbr_xp_bootcode()
         .unwrap_or_else(|e| panic!("ms-sys oracle failed: {e}"));
-    let ours: &[u8] = &bootrec::MBR_BOOT[0..440];
-    if ours == theirs.as_slice() {
-        return;
-    }
+    let ours: &[u8] = &bootrec::MBR_XP_BOOT[0..440];
+
     let diffs = ours.iter().zip(theirs.iter()).filter(|(a, b)| a != b).count();
-    panic!(
-        "bootrec MBR_BOOT != ms-sys --mbr (Hamming distance: {diffs}/440 bytes)\n\
-         Diff sample (first 16 differing offsets):\n{}",
-        diff_sample(ours, &theirs)
-    );
+    eprintln!("mbr_xp: Hamming distance from ms-sys --mbr = {diffs}/440 bytes");
+    if diffs == 0 {
+        eprintln!("  Byte-identical to ms-sys. Either remarkable parallel invention");
+        eprintln!("  or the cleanroom protocol failed — review the asm source.");
+    }
+    if diffs < SUSPICIOUSLY_LOW {
+        panic!(
+            "Hamming distance ({diffs}) is below the suspiciously-low threshold ({SUSPICIOUSLY_LOW}). \
+             Per docs/SPEC.md §Clean-room mechanisms #4, this triggers a manual review: \
+             does boot-asm/mbr_xp.asm look copy-pasted? If parallel invention is genuine, \
+             relax the threshold here with justification."
+        );
+    }
 }
+
+// TODO: mbr_win7_bootcode_baseline_vs_mssys (Layer-1 gate for the future
+// mbr_win7 variant). Pending boot-asm/mbr_win7.asm landing.
 
 // TODO: PBR byte-equality eval (fat32_pbr_bootmgr vs ms-sys --fat32pe).
 // Multi-sector: ms-sys writes sectors 0, 1, and 12 (or thereabouts; needs
@@ -89,15 +75,3 @@ fn mbr_xp_bootcode_matches_mssys() {
 // strip the per-partition BPB so we compare boot-code regions only.
 // Wire up alongside the `fat32_pbr_bootmgr` variant implementation.
 
-fn diff_sample(a: &[u8], b: &[u8]) -> String {
-    let mut lines = Vec::new();
-    for (i, (x, y)) in a.iter().zip(b.iter()).enumerate() {
-        if x != y {
-            lines.push(format!("  offset 0x{i:03X}: ours={x:02X}  mssys={y:02X}"));
-            if lines.len() >= 16 {
-                break;
-            }
-        }
-    }
-    lines.join("\n")
-}

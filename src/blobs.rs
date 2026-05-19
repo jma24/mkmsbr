@@ -4,11 +4,14 @@
 //! error at runtime ("bootrec was built without boot blobs; rebuild with
 //! --features embed-boot-asm").
 
-pub const MBR_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mbr.bin"));
+/// Windows 2000/XP/2003 MBR boot code. 512 bytes. Loaded by BIOS at
+/// 0000:7C00; finds the active primary partition and chain-loads its PBR.
+pub const MBR_XP_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mbr_xp.bin"));
+
 pub const FAT32_PBR_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/fat32_pbr.bin"));
 pub const NTFS_PBR_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ntfs_pbr.bin"));
 
 /// Returns `true` if the boot blobs were embedded at build time.
 pub fn embedded() -> bool {
-    !MBR_BOOT.is_empty()
+    !MBR_XP_BOOT.is_empty()
 }

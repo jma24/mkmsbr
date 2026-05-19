@@ -83,14 +83,34 @@ impl PartitionEntry {
 /// erase-block boundaries and avoids alignment pitfalls.
 pub const PARTITION_START_LBA: u32 = 2048;
 
-/// Construct the MBR for a single-FAT32-active layout suitable for a Windows
-/// 7+ install USB (or any other "one big FAT32, make it bootable" use case).
+/// Variant entry point: Windows 2000/XP/2003 MBR with a single active
+/// FAT32 partition. Suitable for booting NTLDR-chain Windows install
+/// media (the pre-Vista boot path).
+///
+/// Wraps the embedded XP-variant boot code (`MBR_XP_BOOT`) and the
+/// `build_mbr` layout primitive.
+///
+/// The v1.0 API target (per docs/SPEC.md) is
+/// `mbr_xp(disk: DiskGeometry, partitions: &[PartitionEntry]) -> [u8; 512]`
+/// — multi-partition support is future work; today this hardcodes the
+/// single-FAT32-active-at-LBA-2048 shape that's what 99% of install-USB
+/// recipes need.
+pub fn mbr_xp(disk_sectors: u64) -> Result<[u8; 512], MbrError> {
+    build_mbr(crate::MBR_XP_BOOT, disk_sectors)
+}
+
+/// Construct the MBR for a single-FAT32-active layout. The boot code goes
+/// into bytes 0..440; bytes 446..510 hold one active FAT32-LBA primary
+/// partition starting at LBA 2048, slots 2-4 zeroed, signature 0x55AA at
+/// the end.
 ///
 /// Arguments:
-/// - `boot_code`: our MBR boot blob (at least 440 bytes; we use the first 440).
+/// - `boot_code`: an MBR boot blob (at least 440 bytes; we use the first 440).
 /// - `disk_sectors`: total addressable sectors on the device.
 ///
-/// The partition starts at LBA 2048 and extends to the end of the disk.
+/// Most callers want [`mbr_xp`] (and forthcoming `mbr_win7`) which fix the
+/// boot-code variant. `build_mbr` stays public so callers can experiment
+/// with custom boot code.
 pub fn build_mbr(boot_code: &[u8], disk_sectors: u64) -> Result<[u8; 512], MbrError> {
     if boot_code.is_empty() {
         return Err(MbrError::NotEmbedded);

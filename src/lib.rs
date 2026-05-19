@@ -11,6 +11,6 @@ pub mod blobs;
 pub mod mbr;
 pub mod pbr;
 
-pub use blobs::{FAT32_PBR_BOOT, MBR_BOOT, NTFS_PBR_BOOT};
-pub use mbr::{build_mbr, PartitionEntry, PartitionType, PARTITION_START_LBA};
+pub use blobs::{FAT32_PBR_BOOT, MBR_XP_BOOT, NTFS_PBR_BOOT};
+pub use mbr::{build_mbr, mbr_xp, MbrError, PartitionEntry, PartitionType, PARTITION_START_LBA};
 pub use pbr::splice_fat32_pbr;
