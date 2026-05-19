@@ -1,4 +1,4 @@
-; fat32_pbr_bootmgr/sector0.asm — Stage 1 of the multi-sector PBR.
+; fat32_pbr_ntldr/sector0.asm — Stage 1 of the multi-sector NTLDR PBR.
 ;
 ; Loaded by the MBR at 0000:7C00 in real mode. DL = boot drive.
 ;
@@ -7,27 +7,27 @@
 ; linear 0x7E00 where stage 2 takes over.
 ;
 ; Why CHS and not LBA-ext (fn 0x42): 2000s-era BIOSes that emulate USB
-; sticks as USB-FDD reject fn 0x42 with AH=01 (invalid command). CHS via
-; fn 0x02 works on every BIOS since the original IBM PC. The 8GB CHS
-; addressing limit doesn't bite us because BOOTMGR and the FAT/root area
-; sit in the low LBAs of the partition (well under 8GB), and once
-; bootmgr loads it does its own LBA-ext detection.
+; sticks as USB-FDD reject fn 0x42 with AH=01 (invalid command).
+; Confirmed 2026-05-19 on the Dell rig used for XP testing — diagnostic
+; from the prior single-sector NTLDR PBR returned exactly that code.
+; CHS via fn 0x02 works on every BIOS since the original IBM PC. The
+; 8 GB CHS addressing limit doesn't bite us because NTLDR sits in the
+; low LBAs of the partition (well under 8 GB), and once NTLDR loads it
+; takes over the disk-access path itself.
 ;
 ; Why LBA+2 and not LBA+1: partition LBA 1 is the FAT32 FSInfo sector
-; (BPB.FSInfo = 1 in newfs_msdos defaults). Clobbering it would invalidate
-; the FSInfo signatures and force the FS driver to recompute free-cluster
-; counts on first mount. ms-sys does the same: --fat32pe leaves LBA 1
-; alone and places stage-2 code at LBA 2/6/12. bootrec mirrors the LBA-2
-; layout; LBA 6/12 backup paths are not used.
+; (BPB.FSInfo = 1 in newfs_msdos defaults). Clobbering it would
+; invalidate the FSInfo signatures and force the FS driver to recompute
+; free-cluster counts on first mount. ms-sys does the same: --fat32nt
+; leaves LBA 1 alone and places stage-2 code at LBA 2. We mirror that.
 ;
 ; The BPB at offsets 3..89 is filesystem state, spliced by
 ; bootrec::splice_fat32_pbr_multi from the existing freshly-formatted
 ; partition.
 ;
-; Per docs/SPEC.md §Component breakdown, this is the v1.0 fat32_pbr_bootmgr
-; variant. Real Microsoft bootmgr expects to be called from a multi-sector
-; boot environment (see V0.2_PBR_STATUS history); single-sector PBRs work
-; against synthetic loaders but not against real BOOTMGR on real hardware.
+; Identical in structure to fat32_pbr_bootmgr/sector0.asm — only the
+; stage-2 payload differs (NTLDR string instead of BOOTMGR; same load
+; segment 0x2000:0000).
 
 BITS 16
 ORG 0x7C00
@@ -58,19 +58,33 @@ body:
     ; cleared ES above. fn 0x08 returns CL[5:0] = sectors per track and
     ; DH = max head index (heads = DH + 1). Stage 2 reuses the saved
     ; values via the same GEOM_* addresses, so this probe only runs once.
+    ;
+    ; Fallback: some legacy BIOSes (observed 2026-05-19 on the Dell XP
+    ; rig — diagnostic G0100000F) reject fn 0x08 with AH=01 when the
+    ; BIOS-handed drive number is one of their internal USB-emulation
+    ; values (DL=0x0F in that case). The MBR's fn 0x42 read still works
+    ; on the same drive number, so reads aren't dead — only the geometry
+    ; query is. Fall back to the standard USB-FDD profile (SPT=18,
+    ; HEADS=2) so stage 2's CHS reads have a geometry to convert with,
+    ; and keep [BOOT_DRV] as the BIOS-handed value.
     mov ah, 0x08
     mov dl, [BOOT_DRV]
     push es
     xor di, di
     int 0x13
     pop es
-    jc geom_error
+    jc .geom_fallback
     mov al, cl
     and al, 0x3F
     mov [GEOM_SPT], al
     mov al, dh
     inc al
     mov [GEOM_HEADS], al
+    jmp .geom_done
+.geom_fallback:
+    mov byte [GEOM_SPT], 18
+    mov byte [GEOM_HEADS], 2
+.geom_done:
 
     ; Read stage 2: partition LBA 2 = HiddSec + 2.
     mov eax, [0x7C00 + BPB_HiddSec]
@@ -115,28 +129,10 @@ read_one_sector_chs:
     int 0x13
     ret
 
-; Error handlers.
-;
-; AH on entry holds the BIOS status code from the failed INT 13h call
-; (carry was set; AH is the BIOS status return). We print a single-letter
-; code identifying which call failed (G = geometry probe, R = stage-2
-; read), then AH as two hex digits, then halt. Reference: Phoenix BIOS
-; Spec, INT 13h. Common AH values:
-;   01 = invalid command (fn unsupported on this BIOS)
-;   02 = no address mark
-;   03 = write protected (shouldn't fire on read)
-;   04 = sector not found (LBA out of geometry range)
-;   80 = drive not ready (timeout)
-;   AA = drive not ready (variant)
-; geom_error / io_error: print '<letter><AH><SPT><heads><DL>' then halt.
-; Letter identifies which call failed; AH is the BIOS status; SPT/heads
-; are what fn 0x08 reported (or 0 if it never ran for geom_error); DL is
-; the saved boot drive number. Total 9 chars on screen. With this context
-; we can distinguish:
-;   - geom probe returned bogus values (SPT=00 or wildly wrong)
-;   - boot drive wrong (DL surprising)
-;   - CHS conversion bug (everything looks right but AH=01 anyway)
-;   - fn 0x02 unsupported for this drive entirely (any value, AH=01)
+; Error handlers. AH on entry holds the BIOS status code from the failed
+; INT 13h call. Diagnostic format mirrors fat32_pbr_bootmgr/sector0.asm:
+; '<letter><AH><SPT><heads><DL>' = 9 chars on screen. Letter identifies
+; which call failed (G = geometry probe, R = stage-2 read).
 geom_error:
     push ax
     mov al, 'G'
@@ -148,8 +144,8 @@ io_error:
     mov al, 'R'
     call print_char
 print_status:
-    pop ax                             ; AX restored: AH = BIOS status
-    mov al, ah                         ; print AH (status) first
+    pop ax                            ; AH = BIOS status
+    mov al, ah
     call print_byte_hex
     mov al, [GEOM_SPT]
     call print_byte_hex
@@ -161,8 +157,6 @@ halt_loop:
     hlt
     jmp halt_loop
 
-; print_byte_hex: prints AL as two hex chars (high nibble then low).
-; Trashes AX.
 print_byte_hex:
     push ax
     shr al, 4

@@ -37,7 +37,11 @@ fn fat32_pbr_bootmgr_chainloads_in_qemu() {
 #[test]
 #[ignore]
 fn fat32_pbr_ntldr_chainloads_in_qemu() {
-    assert_chainload(bootrec::FAT32_PBR_NTLDR_BOOT, "NTLDR", "ntldr");
+    assert_multi_chainload(
+        bootrec::FAT32_PBR_NTLDR_MULTI_BOOT,
+        "NTLDR",
+        "ntldr_multi",
+    );
 }
 
 #[test]
@@ -214,9 +218,11 @@ fn splice_our_multi_pbr(image: &Path, blob: &[u8]) -> Result<(), String> {
         .write(true)
         .open(image)
         .map_err(|e| format!("opening image for splice: {e}"))?;
-    let mut existing = [0u8; 512];
+    // Read LBA 0 + LBA 1 (FSInfo). The splice preserves FSInfo at LBA 1
+    // and relocates stage 2 to LBA 2 — see splice_fat32_pbr_multi docstring.
+    let mut existing = [0u8; 1024];
     file.read_exact(&mut existing)
-        .map_err(|e| format!("reading existing PBR: {e}"))?;
+        .map_err(|e| format!("reading existing PBR + FSInfo: {e}"))?;
     let spliced = bootrec::splice_fat32_pbr_multi(&existing, blob)
         .map_err(|e| format!("splice_fat32_pbr_multi: {e}"))?;
     file.seek(SeekFrom::Start(0))

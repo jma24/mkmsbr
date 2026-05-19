@@ -4,9 +4,14 @@
 ; Extended BPB (bytes 0x0B..0x53; spliced by
 ; bootrec::splice_ntfs_pbr_multi from the freshly-formatted partition).
 ;
-; Job: read stage 2 (1 sector) from disk LBA = HiddSec + 1 into 0:7E00
+; Job: read stage 2 (2 sectors) from disk LBA = HiddSec + 2 into 0:7E00
 ; via INT 13h ext fn 0x42, far-JMP 0x0000:0x7E00. DL = boot drive
 ; preserved through the call.
+;
+; Why LBA+2 and not LBA+1: keeps bootrec's NTFS PBR layout parallel with
+; its FAT32 PBR (which must avoid LBA+1 = FSInfo). For NTFS the choice
+; is cosmetic — sectors 0..15 are all reserved by $Boot — but matching
+; layouts reduces splice-site special-casing in callers.
 ;
 ; Why multi-sector: real Microsoft NTFS bootsectors are 16 sectors; the
 ; spec (docs/SPEC.md §Component breakdown) sizes the NTFS PBR at ~16 KB.
@@ -40,7 +45,7 @@ body:
     cld
     mov [BOOT_DRV], dl
 
-    ; Read partition LBA + 1..2 → 0:7E00. Two sectors because the NTFS
+    ; Read partition LBA + 2..3 → 0:7E00. Two sectors because the NTFS
     ; MFT walker + INDEX_ALLOCATION reader doesn't fit in 512 bytes.
     mov si, DAP
     mov byte [si + 0], 0x10
@@ -49,7 +54,7 @@ body:
     mov word [si + 4], 0x7E00
     mov word [si + 6], 0x0000
     mov eax, [0x7C00 + BPB_HiddSec]
-    inc eax
+    add eax, 2                         ; partition_LBA + 2 (LBA+1 left untouched)
     mov [si + 8], eax
     mov dword [si + 12], 0
 

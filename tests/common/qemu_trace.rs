@@ -22,15 +22,44 @@ use std::time::Duration;
 const READ_EVENT_CANDIDATES: &[&str] =
     &["blk_co_preadv", "bdrv_co_preadv_part", "bdrv_aio_readv"];
 
+/// One block-read event extracted from the QEMU trace file. Offsets and
+/// lengths are bytes relative to the boot image (which in our L3 tests is
+/// a bare FAT32 partition with no MBR, so byte offset = LBA * 512).
+#[derive(Debug, Clone, Copy)]
+pub struct ReadEvent {
+    pub offset: u64,
+    pub bytes: u64,
+}
+
+impl ReadEvent {
+    /// True if this read overlaps the half-open byte range [start, end).
+    pub fn covers(&self, start: u64, end: u64) -> bool {
+        self.offset < end && self.offset + self.bytes > start
+    }
+}
+
 /// Result of a traced QEMU boot.
 pub struct TracedBoot {
     /// Serial-port output captured from qemu's `-serial stdio`.
     pub serial: String,
     /// Number of guest-issued block reads recorded by the trace.
     pub read_count: usize,
+    /// Per-read (offset, bytes) pairs in trace order. Empty if the trace
+    /// format didn't parse — falls back to `read_count` being the only
+    /// signal. Used by experiments that ask "did the guest read LBA N?"
+    pub reads: Vec<ReadEvent>,
     /// The trace event name that was actually enabled (informational; useful
     /// for debug-printing when a test fails near the threshold).
     pub event_name: &'static str,
+}
+
+impl TracedBoot {
+    /// True if any recorded read touches byte range `[lba*512, (lba+1)*512)`.
+    pub fn covers_lba(&self, lba: u64) -> bool {
+        let start = lba * 512;
+        let end = start + 512;
+        self.reads.iter().any(|r| r.covers(start, end))
+    }
 }
 
 /// Boot `image` under qemu-system-i386 for up to `timeout`, recording
@@ -80,15 +109,60 @@ pub fn boot_with_trace(image: &Path, timeout: Duration) -> Result<TracedBoot, St
 
     let serial = reader.join().unwrap_or_default();
 
-    let read_count = std::fs::read_to_string(&tracefile)
-        .map(|s| s.lines().filter(|l| l.starts_with(event)).count())
-        .unwrap_or(0);
+    let trace_text = std::fs::read_to_string(&tracefile).unwrap_or_default();
+    let reads = parse_read_events(&trace_text, event);
+    let read_count = trace_text.lines().filter(|l| l.starts_with(event)).count();
 
     Ok(TracedBoot {
         serial,
         read_count,
+        reads,
         event_name: event,
     })
+}
+
+/// Parse QEMU `blk_co_preadv` / `bdrv_co_preadv_part` trace lines into
+/// (offset, bytes) pairs. Line format from QEMU's trace-events file is
+/// roughly: `<event> blk <ptr> [bs <ptr>] offset <int> bytes <uint>
+/// flags 0x<hex>`. We split on whitespace and pick the tokens after
+/// "offset" and "bytes". Robust to small format drift across QEMU
+/// versions; returns empty vec if nothing parses (then `read_count` is
+/// still authoritative).
+fn parse_read_events(trace: &str, event: &str) -> Vec<ReadEvent> {
+    let mut out = Vec::new();
+    for line in trace.lines() {
+        if !line.starts_with(event) {
+            continue;
+        }
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        let mut offset: Option<u64> = None;
+        let mut bytes: Option<u64> = None;
+        for i in 0..tokens.len().saturating_sub(1) {
+            // Handle both "offset 1234" and "offset=1234" forms.
+            let (key, value_inline) = match tokens[i].split_once('=') {
+                Some((k, v)) => (k, Some(v)),
+                None => (tokens[i], None),
+            };
+            let value = value_inline.unwrap_or(tokens[i + 1]);
+            match key {
+                "offset" => offset = parse_u64(value),
+                "bytes" => bytes = parse_u64(value),
+                _ => {}
+            }
+        }
+        if let (Some(offset), Some(bytes)) = (offset, bytes) {
+            out.push(ReadEvent { offset, bytes });
+        }
+    }
+    out
+}
+
+fn parse_u64(s: &str) -> Option<u64> {
+    let s = s.trim_end_matches(',');
+    if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        return u64::from_str_radix(rest, 16).ok();
+    }
+    s.parse::<u64>().ok()
 }
 
 /// Probe `qemu-system-i386 -trace help` once and pick the first candidate

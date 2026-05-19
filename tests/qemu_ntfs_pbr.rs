@@ -18,9 +18,10 @@
 //!   2. Format a 16 MiB raw NTFS image under Docker (mkfs.ntfs -f -F).
 //!   3. Copy the padded fake bootmgr into the image as `\BOOTMGR` via
 //!      `ntfscp` (no mount needed, no FUSE, no --privileged).
-//!   4. Read the freshly-formatted sector 0, splice our PBR blob through
-//!      `splice_ntfs_pbr_multi` (preserving the BPB at bytes 3..84),
-//!      write the spliced 1024 bytes back over sectors 0-1.
+//!   4. Read the freshly-formatted LBA 0 + LBA 1, splice our PBR blob
+//!      through `splice_ntfs_pbr_multi` (preserving BPB bytes 3..84 and
+//!      the formatter's LBA 1), write the spliced 2048 bytes back over
+//!      sectors 0..3 (stage 2 now lives at LBA 2..3).
 //!   5. Boot the raw image under `qemu-system-i386 -serial stdio`.
 //!   6. Pass if the serial output contains "BOOTREC OK".
 
@@ -169,9 +170,11 @@ fn splice_our_pbr(image: &Path, blob: &[u8]) -> Result<(), String> {
         .write(true)
         .open(image)
         .map_err(|e| format!("opening image for splice: {e}"))?;
-    let mut existing = [0u8; 512];
+    // Read LBA 0 + LBA 1. The splice preserves LBA 1 verbatim and places
+    // stage 2 at LBA 2..3 (see splice_ntfs_pbr_multi docstring).
+    let mut existing = [0u8; 1024];
     file.read_exact(&mut existing)
-        .map_err(|e| format!("reading existing PBR: {e}"))?;
+        .map_err(|e| format!("reading existing PBR + LBA 1: {e}"))?;
     let spliced = bootrec::splice_ntfs_pbr_multi(&existing, blob)
         .map_err(|e| format!("splice_ntfs_pbr_multi: {e}"))?;
     file.seek(SeekFrom::Start(0))

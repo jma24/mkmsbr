@@ -129,19 +129,29 @@ fn fat32_pbr_bootmgr_distance_from_mssys() {
 #[test]
 #[ignore]
 fn fat32_pbr_ntldr_distance_from_mssys() {
-    if bootrec::FAT32_PBR_NTLDR_BOOT.is_empty() {
+    if bootrec::FAT32_PBR_NTLDR_MULTI_BOOT.is_empty() {
         panic!(
-            "FAT32_PBR_NTLDR_BOOT is empty (built without --features embed-boot-asm). \
+            "FAT32_PBR_NTLDR_MULTI_BOOT is empty (built without --features embed-boot-asm). \
              Re-run with --features \"embed-boot-asm compare-mssys\"."
         );
     }
+    // The NTLDR variant went multi-sector with the CHS rewrite for legacy
+    // BIOSes that reject INT 13h fn 0x42 (see docs/BACKLOG.md). The Hamming
+    // comparison covers stage 1's sector 0 only — ms-sys --fat32nt is still
+    // single-sector and writes to LBA 0 alone, so there's no ms-sys stage 2
+    // to compare against. Stage 2 lives at blob offset 512..1024.
     let theirs = oracle::ms_sys_fat32_ntldr_pbr()
         .unwrap_or_else(|e| panic!("ms-sys PBR oracle failed: {e}"));
     let mut ours_full = [0u8; 512];
-    ours_full.copy_from_slice(&bootrec::FAT32_PBR_NTLDR_BOOT[0..512]);
+    ours_full.copy_from_slice(&bootrec::FAT32_PBR_NTLDR_MULTI_BOOT[0..512]);
     let ours = pbr_bootcode_regions(&ours_full);
     let theirs = pbr_bootcode_regions(&theirs);
-    assert_distance("fat32_pbr_ntldr", "--fat32nt (sector 0)", &ours, &theirs);
+    assert_distance(
+        "fat32_pbr_ntldr_multi",
+        "--fat32nt (sector 0, boot-code regions)",
+        &ours,
+        &theirs,
+    );
 }
 
 /// NTFS PBR baseline. Compares the boot-code regions of sector 0 of our
@@ -223,10 +233,15 @@ fn fat32_pbr_bootmgr_multi_distance_from_mssys() {
         &theirs_regions,
     );
 
-    // --- Sector 1: full 512 bytes against each non-zero ms-sys sector. ---
-    let our_s1 = &bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT[512..1024];
+    // --- Stage 2 (blob offset 512..1024): full 512 bytes against each
+    // non-zero ms-sys sector. Note: as of the FSInfo-preserving splice
+    // change, our stage 2 lands at partition LBA 2 (not LBA 1) — so the
+    // expected best match is ms-sys sector 2, though we still search
+    // 1..15 because the historical ms-sys layout uses 0/1/2/6/12 with
+    // sector 1 carrying only FSInfo signatures. ---
+    let our_stage2 = &bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT[512..1024];
     let mut best: Option<(usize, usize)> = None; // (distance, sector_idx)
-    eprintln!("fat32_pbr_bootmgr_multi sector 1 vs ms-sys --fat32pe sectors 1..15:");
+    eprintln!("fat32_pbr_bootmgr_multi stage 2 vs ms-sys --fat32pe sectors 1..15:");
     for i in 1..16usize {
         let ms_sector = &theirs_16[i * 512..(i + 1) * 512];
         let nz = ms_sector.iter().filter(|&&b| b != 0).count();
@@ -234,7 +249,7 @@ fn fat32_pbr_bootmgr_multi_distance_from_mssys() {
             eprintln!("  sector {i:>2}: ms-sys sector is all-zero (skipped)");
             continue;
         }
-        let diffs = our_s1.iter().zip(ms_sector.iter()).filter(|(a, b)| a != b).count();
+        let diffs = our_stage2.iter().zip(ms_sector.iter()).filter(|(a, b)| a != b).count();
         eprintln!(
             "  sector {i:>2}: Hamming={diffs:>3}/512 (ms-sys sector has {nz} non-zero bytes)"
         );
@@ -248,12 +263,12 @@ fn fat32_pbr_bootmgr_multi_distance_from_mssys() {
          this test's assumptions need revisiting",
     );
     eprintln!(
-        "fat32_pbr_bootmgr_multi: best sector-1 alignment is ms-sys sector {best_idx} \
+        "fat32_pbr_bootmgr_multi: best stage-2 alignment is ms-sys sector {best_idx} \
          (Hamming={best_diffs}/512)"
     );
     if best_diffs < SUSPICIOUSLY_LOW {
         panic!(
-            "[fat32_pbr_bootmgr_multi] our sector 1 is suspiciously close to ms-sys sector \
+            "[fat32_pbr_bootmgr_multi] our stage 2 is suspiciously close to ms-sys sector \
              {best_idx} (Hamming={best_diffs} < {SUSPICIOUSLY_LOW}). Per docs/SPEC.md \
              §Clean-room mechanisms #4 this triggers manual review of \
              boot-asm/fat32_pbr_bootmgr/sector1.asm."

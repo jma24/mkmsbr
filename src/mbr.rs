@@ -145,6 +145,18 @@ pub fn build_mbr(boot_code: &[u8], disk_sectors: u64) -> Result<[u8; 512], MbrEr
     let mut mbr = [0u8; 512];
     mbr[0..440].copy_from_slice(&boot_code[..440]);
 
+    // NT disk signature at offset 0x1B8 (4 bytes). Windows boot manager
+    // and BCD reference the boot disk by this signature; it must be
+    // non-zero for Windows handoff to find its own boot drive. Some
+    // 2000s-era BIOSes also key USB-FDD vs USB-HDD emulation on whether
+    // this is non-zero. ms-sys writes a per-disk random value here; we
+    // currently use a fixed test value (0xDEADBEEF) to probe whether the
+    // BIOS cares about non-zero signature presence at all. If the L4
+    // boot succeeds with this, the next step is `mbr_win7_with_signature
+    // (disk, sig: u32)` so usbwin can generate a real per-USB sig.
+    // TODO(v1.0): replace fixed value with caller-supplied parameter.
+    mbr[0x1B8..0x1BC].copy_from_slice(&0xDEADBEEFu32.to_le_bytes());
+
     let active = PartitionEntry {
         bootable: true,
         partition_type: PartitionType::Fat32Lba,

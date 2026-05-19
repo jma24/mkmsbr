@@ -20,7 +20,6 @@ fn main() {
         "mbr_xp",
         "mbr_win7",
         "fat32_pbr_bootmgr",
-        "fat32_pbr_ntldr",
     ];
 
     let embed = env::var("CARGO_FEATURE_EMBED_BOOT_ASM").is_ok();
@@ -34,7 +33,7 @@ fn main() {
     // Multi-sector variants: each lives in its own subdirectory with
     // sector0.asm + sector1.asm (per docs/SPEC.md §Project layout) and
     // is concatenated into a {variant}_multi.bin blob.
-    for variant in ["fat32_pbr_bootmgr", "ntfs_pbr_bootmgr"] {
+    for variant in ["fat32_pbr_bootmgr", "fat32_pbr_ntldr", "ntfs_pbr_bootmgr"] {
         let multi_dir = asm_dir.join(variant);
         let multi_out = out_dir.join(format!("{variant}_multi.bin"));
         build_multi(&multi_dir, &multi_out, embed);

@@ -1,20 +1,20 @@
-; fat32_pbr_bootmgr/sector1.asm — Stage 2 of the multi-sector PBR.
+; fat32_pbr_ntldr/sector1.asm — Stage 2 of the multi-sector NTLDR PBR.
 ;
 ; Loaded by stage 1 (sector0.asm) at 0x7E00. Entered via far-jump from
 ; stage 1 with DL = boot drive. Sector 0 (with BPB) is still resident
 ; at 0x7C00, so BPB reads come from [0x7C00 + offset].
 ;
-; Job: walk the FAT32 root directory, find BOOTMGR, follow its cluster
+; Job: walk the FAT32 root directory, find NTLDR, follow its cluster
 ; chain to load it at 2000:0000, then far-jump to it.
 ;
-; Algorithm matches the legacy single-sector fat32_pbr_bootmgr.asm — the
-; FAT walking logic is identical; only the load address differs.
+; Algorithm is identical to fat32_pbr_bootmgr/sector1.asm — only the
+; name string ("NTLDR      " vs "BOOTMGR    ") and the load-segment
+; label (NTLDR_SEG vs BOOTMGR_SEG) differ. Both load to segment 0x2000,
+; the canonical NTLDR / BOOTMGR entry point.
 ;
 ; Disk reads use INT 13h fn 0x02 (CHS) via geometry that stage 1 probed
 ; and saved at [GEOM_SPT] / [GEOM_HEADS]. See sector0.asm for the
 ; rationale (USB-FDD-emulating BIOSes reject fn 0x42 with AH=01).
-;
-; Clean-room: written from FAT32 spec (FATGEN103) + Phoenix BIOS docs.
 
 BITS 16
 ORG 0x7E00
@@ -34,7 +34,7 @@ ORG 0x7E00
 %define DATA_LBA         0x7B04       ; dword
 %define FAT_LBA          0x7B08       ; dword
 %define READ_LBA         0x7B0C       ; dword
-%define BOOTMGR_SEG      0x2000
+%define NTLDR_SEG        0x2000
 
 stage2:
     ; Setup is already done by stage 1, but DS/ES might be stale after
@@ -61,7 +61,7 @@ stage2:
     jnz .dmul
     mov [DATA_LBA], eax
 
-    ; Walk root directory looking for BOOTMGR. EAX = current cluster.
+    ; Walk root directory looking for NTLDR. EAX = current cluster.
     mov eax, [0x7C00 + BPB_RootClus]
 
 .dir_cluster:
@@ -127,8 +127,8 @@ stage2:
     shl ebx, 16
     or eax, ebx
 
-    ; Load BOOTMGR cluster chain to BOOTMGR_SEG:0000.
-    mov bx, BOOTMGR_SEG
+    ; Load NTLDR cluster chain to NTLDR_SEG:0000.
+    mov bx, NTLDR_SEG
     mov es, bx
     xor di, di
 .load:
@@ -140,7 +140,7 @@ stage2:
     jb .load
 
     mov dl, [BOOT_DRV]
-    jmp BOOTMGR_SEG:0x0000
+    jmp NTLDR_SEG:0x0000
 
 read_cluster:
     sub eax, 2
@@ -193,7 +193,7 @@ read_one_sector:
     jc .err
     ret
 .err:
-    ; AH holds BIOS status. die_io prints '2' + AH as two hex digits.
+    ; AH holds BIOS status. die_io prints '2' + AH + READ_LBA.
     mov al, '2'
     jmp die_io
 
@@ -227,16 +227,11 @@ next_cluster:
 
 ; Error handlers.
 ;
-; die: AL = single-char error code, no status. Used for '1' (BOOTMGR
-; not found) where there's no BIOS status to surface.
-; die_io: AL = single-char error code, AH = BIOS status from a failed
-; INT 13h. Prints AL then AH as two hex digits. Used for '2' (disk
-; read failed). Same status-decoding table as stage 1's 'R' handler
-; in sector0.asm — see that file's .io_error comment.
+; die: AL = single-char error code, no status. Used for '1' (NTLDR not
+; found) where there's no BIOS status to surface.
 ; die_io: AL = error letter, AH = BIOS status. Prints '<letter><AH>'
-; then the 4-byte READ_LBA (8 hex chars) so we can see which absolute LBA
-; the failed read targeted. Total 11 chars on screen. READ_LBA is the
-; key diagnostic for stage 2 — the FAT walk reads many different LBAs.
+; then the 4-byte READ_LBA (8 hex chars) so we can see which absolute
+; LBA the failed read targeted. Total 11 chars on screen.
 die_io:
     push ax
     call print_char                    ; prints AL = error letter
@@ -287,6 +282,6 @@ print_hex_nibble:
     add al, '0'
     jmp print_char
 
-name:    db 'BOOTMGR    '
+name:    db 'NTLDR      '
 
     times 512 - ($ - $$) db 0

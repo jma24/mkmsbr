@@ -31,10 +31,18 @@ pub const FAT32_PBR_BOOTMGR_BOOT: &[u8] =
 pub const FAT32_PBR_BOOTMGR_MULTI_BOOT: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/fat32_pbr_bootmgr_multi.bin"));
 
-/// FAT32 PBR boot code for the NTLDR-loading variant (Win 2000/XP/2003).
-/// 512 bytes, single-sector.
-pub const FAT32_PBR_NTLDR_BOOT: &[u8] =
-    include_bytes!(concat!(env!("OUT_DIR"), "/fat32_pbr_ntldr.bin"));
+/// FAT32 PBR boot code, multi-sector NTLDR variant (Win 2000/XP/2003).
+/// 1024 bytes (sector 0 stage-1 + sector 1 stage-2). Caller splices
+/// through [`crate::splice_fat32_pbr_multi`].
+///
+/// Multi-sector layout is mandatory: legacy BIOSes that emulate USB
+/// sticks as USB-FDD reject INT 13h fn 0x42 with AH=01, so stage 1
+/// uses CHS reads (fn 0x02) for the stage-2 load and stage 2 uses CHS
+/// for every FAT walk read. Single-sector FAT-walk + CHS reads + name
+/// search doesn't fit in 512 bytes. See `boot-asm/fat32_pbr_ntldr/`
+/// for the per-sector NASM.
+pub const FAT32_PBR_NTLDR_MULTI_BOOT: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/fat32_pbr_ntldr_multi.bin"));
 
 /// NTFS PBR boot code, multi-sector BOOTMGR variant. 1024 bytes
 /// (sector 0 stage 1 + sector 1 stage 2). Caller splices through

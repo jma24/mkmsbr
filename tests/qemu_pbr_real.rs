@@ -61,20 +61,25 @@ fn fat32_pbr_ntldr_loads_real_ntldr_in_qemu() {
         return;
     }
 
-    let blob = bootrec::FAT32_PBR_NTLDR_BOOT;
+    let blob = bootrec::FAT32_PBR_NTLDR_MULTI_BOOT;
     if blob.is_empty() {
         panic!(
-            "FAT32_PBR_NTLDR_BOOT is empty (built without --features embed-boot-asm). \
+            "FAT32_PBR_NTLDR_MULTI_BOOT is empty (built without --features embed-boot-asm). \
              Re-run: cargo test --test qemu_pbr_real --features embed-boot-asm -- --ignored"
         );
     }
+    assert!(
+        blob.len() >= 1024 && blob.len() % 512 == 0,
+        "multi blob is {} bytes; expected non-zero multiple of 512",
+        blob.len()
+    );
 
     let tmp = tempdir();
     let image = tmp.join("bootrec-l3-ntldr.img");
     create_fat32_image(&image).expect("formatting FAT32 image");
     mcopy_to_root(&image, &ntldr, "NTLDR").expect("mcopy NTLDR");
     mcopy_to_root(&image, &ntdetect, "NTDETECT.COM").expect("mcopy NTDETECT.COM");
-    splice_pbr_single(&image, blob).expect("splicing single-sector PBR");
+    splice_pbr_multi(&image, blob).expect("splicing multi-sector PBR");
 
     let result = boot_with_trace(&image, BOOT_TIMEOUT).expect("running qemu");
     assert_chainloaded("ntldr", result);
@@ -122,7 +127,59 @@ fn fat32_pbr_bootmgr_multi_loads_real_bootmgr_in_qemu() {
     splice_pbr_multi(&image, blob).expect("splicing multi-sector PBR");
 
     let result = boot_with_trace(&image, BOOT_TIMEOUT).expect("running qemu");
+    report_lba12_verdict("bootmgr_multi", &result);
     assert_chainloaded("bootmgr_multi", result);
+}
+
+/// Experiment A from the L4 failure investigation (docs/BACKLOG.md "Byte-diff
+/// findings vs ms-sys"): does real Microsoft bootmgr ever read partition
+/// LBA 12 from disk? If yes, the on-disk contents of LBA 12 are load-bearing
+/// (our zero-fill there is a hard crash on first execution) and the LBA-12
+/// stage-3 hypothesis is confirmed. If no, the hypothesis narrows: bootmgr
+/// either doesn't care about LBA 12 at all, or expects ms-sys-style pre-loaded
+/// helper bytes already resident in RAM (we'd need separate experiments for
+/// that variant).
+///
+/// The image used in this test is a bare FAT32 partition (no MBR), so trace
+/// byte-offsets are partition-relative — LBA 12 starts at byte 12 * 512 = 6144.
+///
+/// Verdict is printed, not asserted. We're gathering signal, not gating.
+fn report_lba12_verdict(variant: &str, result: &TracedBoot) {
+    let touched = result.covers_lba(12);
+    let pbr_load_reads = result
+        .reads
+        .iter()
+        .filter(|r| r.offset < 16 * 512)
+        .count();
+    eprintln!(
+        "[{variant}] LBA-12 verdict: bootmgr-or-PBR read LBA 12 = {touched} \
+         (parsed reads = {}, total events = {}, reads in first 16 LBAs = {pbr_load_reads})",
+        result.reads.len(),
+        result.read_count,
+    );
+    if result.reads.is_empty() && result.read_count > 0 {
+        eprintln!(
+            "[{variant}] WARNING: trace event count > 0 but parsed offsets = 0. \
+             Trace line format may have drifted; rerun with --nocapture and \
+             inspect the .trace file to fix parse_read_events()."
+        );
+    }
+    if touched {
+        let lba12_reads: Vec<_> = result
+            .reads
+            .iter()
+            .filter(|r| r.covers(12 * 512, 13 * 512))
+            .collect();
+        eprintln!(
+            "[{variant}] LBA-12 read events: {lba12_reads:?}\n  \
+             First such read is at trace index {}",
+            result
+                .reads
+                .iter()
+                .position(|r| r.covers(12 * 512, 13 * 512))
+                .unwrap_or(usize::MAX),
+        );
+    }
 }
 
 fn assert_chainloaded(variant: &str, result: TracedBoot) {
@@ -233,27 +290,6 @@ fn mmd_dir(image: &Path, dir: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn splice_pbr_single(image: &Path, blob: &[u8]) -> Result<(), String> {
-    use std::fs::OpenOptions;
-    use std::io::{Read, Seek, SeekFrom, Write};
-
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(image)
-        .map_err(|e| format!("opening image: {e}"))?;
-    let mut existing = [0u8; 512];
-    file.read_exact(&mut existing)
-        .map_err(|e| format!("reading existing PBR: {e}"))?;
-    let spliced = bootrec::splice_fat32_pbr(&existing, blob)
-        .map_err(|e| format!("splice_fat32_pbr: {e}"))?;
-    file.seek(SeekFrom::Start(0))
-        .map_err(|e| format!("seek: {e}"))?;
-    file.write_all(&spliced)
-        .map_err(|e| format!("writing PBR: {e}"))?;
-    Ok(())
-}
-
 fn splice_pbr_multi(image: &Path, blob: &[u8]) -> Result<(), String> {
     use std::fs::OpenOptions;
     use std::io::{Read, Seek, SeekFrom, Write};
@@ -263,9 +299,11 @@ fn splice_pbr_multi(image: &Path, blob: &[u8]) -> Result<(), String> {
         .write(true)
         .open(image)
         .map_err(|e| format!("opening image: {e}"))?;
-    let mut existing = [0u8; 512];
+    // Read LBA 0 + LBA 1 (FSInfo) so the splice can preserve FSInfo
+    // and place stage 2 at LBA 2 (see splice_fat32_pbr_multi docstring).
+    let mut existing = [0u8; 1024];
     file.read_exact(&mut existing)
-        .map_err(|e| format!("reading existing PBR: {e}"))?;
+        .map_err(|e| format!("reading existing PBR + FSInfo: {e}"))?;
     let spliced = bootrec::splice_fat32_pbr_multi(&existing, blob)
         .map_err(|e| format!("splice_fat32_pbr_multi: {e}"))?;
     file.seek(SeekFrom::Start(0))
