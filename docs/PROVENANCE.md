@@ -55,9 +55,12 @@ Three reasons, in increasing order of importance:
 For ease of regression detection without setting up the equivalence test, here are the SHA-256 hashes our NASM output should produce. (TODO: fill these in once the NASM sources are written and verified against ms-sys at least once.)
 
 ```
-mbr.bin       SHA-256: TODO
-fat32_pbr.bin SHA-256: TODO
-ntfs_pbr.bin  SHA-256: TODO
+mbr_xp.bin                    SHA-256: TODO
+mbr_win7.bin                  SHA-256: TODO
+fat32_pbr_ntldr.bin           SHA-256: TODO
+fat32_pbr_bootmgr.bin         SHA-256: TODO
+fat32_pbr_bootmgr_multi.bin   SHA-256: TODO
+ntfs_pbr_bootmgr_multi.bin    SHA-256: TODO
 ```
 
 If `cargo build` produces blobs whose SHA-256s don't match these, something changed in our assembly source or in NASM itself. The test `tests/blob_hashes.rs` enforces this.

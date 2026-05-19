@@ -10,8 +10,9 @@ the eval-first methodology is paying compounding interest. As of
 this writing, 4 of 5 variants ship at their `boot-asm/` Layer-2
 target in a single development arc.
 
-Last updated: 2026-05-18, after the L3 harness landed (`tests/qemu_pbr_real.rs`
-+ `tests/common/qemu_trace.rs`, uncommitted).
+Last updated: 2026-05-18, after `ntfs_pbr_bootmgr` (multi-sector) hit L2
+green against an ntfs-3g fixture in QEMU (`tests/qemu_ntfs_pbr.rs`,
+uncommitted).
 
 ## Variant matrix
 
@@ -27,7 +28,7 @@ Microsoft files. "L4" = real-hardware boot.
 | `fat32_pbr_ntldr`           | ✓ 398/423 vs `--fat32nt` | ✓          | ✓ 990 reads | —     | L1+L2+L3    | shipped at spec target |
 | `fat32_pbr_bootmgr` (single)| ✓ 392/423 vs `--fat32pe` | ✓          | unproven  | unproven| —           | legacy / smoke baseline |
 | `fat32_pbr_bootmgr` (multi) | ✓ ≥378/512 vs `--fat32pe` s1..15 | ✓    | ✓ 1520 reads | —  | L2+L3+L4    | L4 pending |
-| `ntfs_pbr_bootmgr`          | —                        | —          | —         | —       | L2+L3       | not started |
+| `ntfs_pbr_bootmgr` (multi)  | TODO                     | ✓ (ntfs-3g) | unproven  | —       | L2+L3       | L2 green; L1 + L3 pending |
 
 The single-sector `fat32_pbr_bootmgr` is kept as a smoke-test baseline.
 The multi-sector variant is the v1.0 target (`docs/SPEC.md` line 132).
@@ -52,13 +53,36 @@ The multi-sector variant is the v1.0 target (`docs/SPEC.md` line 132).
 - **L4 real-hardware verification.** Dell E6410 + 2010-2015 Intel
   desktop + 2005-vintage P4. *Blocks: spec L4 target / 1.0 release.*
 
-### `ntfs_pbr_bootmgr` from scratch
-- **NASM clean-room.** Walks $MFT instead of FAT. Spec calls
-  high-complexity; comparable lift to the FAT32 PBRs. Layer 2 against
-  a fake bootmgr on a synthetic NTFS image (mkfs.ntfs / mtools-ntfs
-  toolchain needed; uncertain on macOS dev environment).
-- **L3 fixture from a Win 7 NTFS install.** Same shape as bootmgr L3.
-- *Blocks: spec L2+L3 target.*
+### `ntfs_pbr_bootmgr` to spec target
+- ~~L2 NASM clean-room~~ — **shipped** as a multi-sector PBR
+  (3 sectors: 512-byte stage 1 + 1024-byte stage 2). Stage 2 walks
+  $MFT record 5, reads INDEX_ALLOCATION's first INDX block, scans for
+  "BOOTMGR" (UTF-16, namespace-agnostic), then chases the matched
+  record's $DATA runs into segment 0x2000. Validated against an
+  ntfs-3g-formatted 16 MiB image under QEMU via
+  `tests/qemu_ntfs_pbr.rs` (Docker is the macOS workaround for the
+  missing `mkfs.ntfs`).
+- **Known L2 limitations** (deferred to L3 work):
+  - INDEX_ROOT inline path not implemented — works because ntfs-3g
+    always allocates INDEX_ALLOCATION for the root dir, but
+    Microsoft's `format` on small volumes may keep entries inline.
+  - INDEX_ALLOCATION B+tree descent not implemented — only the first
+    INDX block is scanned. Real Win 7 install media has more root
+    entries; will need sub-node descent.
+  - USA (Update Sequence Array) fixups skipped — works because the
+    L2 fixture's BOOTMGR entry lives well before sector-end fixup
+    offsets; real volumes will need fixup logic.
+  - $MFT's own data runs not walked — assumes records 0..N are in
+    the first MFT extent. True for fresh volumes; will need extent
+    chasing if the target BOOTMGR record number exceeds the first
+    extent.
+  - Resident $DATA unsupported — fake bootmgr must be padded past
+    NTFS's resident-attribute threshold (~700 B) in the L2 test.
+- **L1 oracle.** ms-sys `--ntfs` byte-distance comparison TODO.
+- **L3 fixture** from a real Win 7 NTFS install. Same shape as the
+  bootmgr L3, but the four "Known L2 limitations" above will need
+  to be addressed first.
+- *Blocks: spec L3 target.*
 
 ## Eval framework
 
@@ -68,7 +92,7 @@ The multi-sector variant is the v1.0 target (`docs/SPEC.md` line 132).
 | Layer 1 oracle for multi-sector PBR | §Verifiability     | ✓ — ms-sys populates sectors 0,1,2,6,12; best sector-1 match Hamming 378/512 |
 | Layer 2 QEMU harness (FAT32 PBR)    | §Eval-first        | ✓ single + multi |
 | Layer 2 QEMU harness (MBR)          | §Eval-first        | ✓ both variants |
-| Layer 2 QEMU harness (NTFS)         | §Eval-first        | TODO |
+| Layer 2 QEMU harness (NTFS)         | §Eval-first        | ✓ `tests/qemu_ntfs_pbr.rs` (Docker mkfs.ntfs + ntfscp fixture) |
 | Layer 3 fixture build script        | §Real-content      | ✓ `scripts/build_l3_fixtures.sh` (XP + Win 7) |
 | Layer 3 QEMU harness (read-count gate) | §Real-content   | ✓ `tests/qemu_pbr_real.rs` — gates on `blk_co_preadv` count > 50 |
 | Layer 4 hardware checklist          | §Layer 4           | TODO |

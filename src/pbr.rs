@@ -1,5 +1,7 @@
-//! The FAT32 PBR splice. The "preserve the BPB" rule from docs/BOOT_RECORDS.md
-//! lives here as code.
+//! The PBR splice. The "preserve the BPB" rule from docs/BOOT_RECORDS.md
+//! lives here as code, once per filesystem type. FAT32 preserves bytes
+//! 3..89 (OEM + BPB + extended BPB); NTFS preserves 3..84 (OEM + BPB +
+//! extended BPB; layout per Microsoft NTFS public docs).
 
 use thiserror::Error;
 
@@ -86,6 +88,38 @@ pub fn splice_fat32_pbr_multi(existing: &[u8], blob: &[u8]) -> Result<Vec<u8>, P
     Ok(out)
 }
 
+/// Multi-sector NTFS PBR splice. Same shape as
+/// [`splice_fat32_pbr_multi`] but the preserved BPB range is bytes
+/// 3..84 (OEM ID + NTFS BPB + extended BPB; layout per Microsoft NTFS
+/// On-Disk Format public docs). Boot signature lives only in sector 0;
+/// sectors 1+ are copied verbatim.
+///
+///   bytes      0..3    = blob[0..3]       (jump)
+///   bytes      3..84   = existing[3..84]  (OEM + BPB; preserved)
+///   bytes     84..510  = blob[84..510]    (stage 1 boot code)
+///   bytes    510..512  = [0x55, 0xAA]     (boot signature)
+///   bytes    512..end  = blob[512..]      (stage 2+; verbatim)
+pub fn splice_ntfs_pbr_multi(existing: &[u8], blob: &[u8]) -> Result<Vec<u8>, PbrError> {
+    if existing.len() != 512 {
+        return Err(PbrError::BadExistingSize { got: existing.len() });
+    }
+    if blob.is_empty() {
+        return Err(PbrError::NotEmbedded);
+    }
+    if blob.len() < 1024 || blob.len() % 512 != 0 {
+        return Err(PbrError::BadMultiBlobSize { got: blob.len() });
+    }
+
+    let mut out = vec![0u8; blob.len()];
+    out[0..3].copy_from_slice(&blob[0..3]);
+    out[3..84].copy_from_slice(&existing[3..84]);
+    out[84..510].copy_from_slice(&blob[84..510]);
+    out[510] = 0x55;
+    out[511] = 0xAA;
+    out[512..].copy_from_slice(&blob[512..]);
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,6 +192,49 @@ mod tests {
         assert!(out[90..510].iter().all(|&b| b == 0xCC), "stage 1 boot code");
         assert_eq!(&out[510..512], &[0x55, 0xAA]);
         assert!(out[512..1024].iter().all(|&b| b == 0xAB), "stage 2 carried through");
+    }
+
+    fn fake_ntfs_existing() -> Vec<u8> {
+        let mut e = vec![0u8; 512];
+        e[3..11].copy_from_slice(b"NTFS    ");
+        for i in 11..84 {
+            e[i] = 0xBB;
+        }
+        e
+    }
+
+    fn fake_ntfs_multi_blob() -> Vec<u8> {
+        let mut b = vec![0u8; 1024];
+        b[0] = 0xEB;
+        b[1] = 0x52;
+        b[2] = 0x90;
+        for i in 84..510 {
+            b[i] = 0xCC;
+        }
+        for i in 512..1024 {
+            b[i] = 0xAB;
+        }
+        b
+    }
+
+    #[test]
+    fn ntfs_multi_splice_preserves_bpb_and_carries_stage2() {
+        let out = splice_ntfs_pbr_multi(&fake_ntfs_existing(), &fake_ntfs_multi_blob()).unwrap();
+        assert_eq!(out.len(), 1024);
+        assert_eq!(&out[0..3], &[0xEB, 0x52, 0x90], "jump from blob");
+        assert_eq!(&out[3..11], b"NTFS    ", "OEM preserved");
+        assert!(out[11..84].iter().all(|&b| b == 0xBB), "BPB preserved");
+        assert!(out[84..510].iter().all(|&b| b == 0xCC), "stage 1 boot code");
+        assert_eq!(&out[510..512], &[0x55, 0xAA]);
+        assert!(out[512..1024].iter().all(|&b| b == 0xAB), "stage 2 carried through");
+    }
+
+    #[test]
+    fn ntfs_multi_splice_rejects_bad_sizes() {
+        assert!(matches!(
+            splice_ntfs_pbr_multi(&fake_ntfs_existing(), &vec![0u8; 512]),
+            Err(PbrError::BadMultiBlobSize { got: 512 })
+        ));
     }
 
     #[test]

@@ -21,7 +21,6 @@ fn main() {
         "mbr_win7",
         "fat32_pbr_bootmgr",
         "fat32_pbr_ntldr",
-        "ntfs_pbr",
     ];
 
     let embed = env::var("CARGO_FEATURE_EMBED_BOOT_ASM").is_ok();
@@ -32,12 +31,14 @@ fn main() {
         build_single(&asm_path, &out_path, embed);
     }
 
-    // Multi-sector fat32_pbr_bootmgr: sector0 + sector1 concatenated to
-    // a 1024-byte blob. The variant lives in its own subdirectory per
-    // docs/SPEC.md §Project layout.
-    let multi_dir = asm_dir.join("fat32_pbr_bootmgr");
-    let multi_out = out_dir.join("fat32_pbr_bootmgr_multi.bin");
-    build_multi(&multi_dir, &multi_out, embed);
+    // Multi-sector variants: each lives in its own subdirectory with
+    // sector0.asm + sector1.asm (per docs/SPEC.md §Project layout) and
+    // is concatenated into a {variant}_multi.bin blob.
+    for variant in ["fat32_pbr_bootmgr", "ntfs_pbr_bootmgr"] {
+        let multi_dir = asm_dir.join(variant);
+        let multi_out = out_dir.join(format!("{variant}_multi.bin"));
+        build_multi(&multi_dir, &multi_out, embed);
+    }
 }
 
 fn build_single(asm_path: &Path, out_path: &Path, embed: bool) {
@@ -70,10 +71,17 @@ fn build_multi(dir: &Path, out_path: &Path, embed: bool) {
         return;
     }
 
+    // Derive intermediate filenames from the variant prefix in out_path
+    // (e.g. "ntfs_pbr_bootmgr_multi.bin" → "ntfs_pbr_bootmgr").
+    let stem = out_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .and_then(|s| s.strip_suffix("_multi"))
+        .expect("multi blob out_path must end in _multi.bin");
     let mut combined = Vec::with_capacity(1024);
     for sector in &["sector0", "sector1"] {
         let asm = dir.join(format!("{sector}.asm"));
-        let bin = out_path.with_file_name(format!("fat32_pbr_bootmgr_{sector}.bin"));
+        let bin = out_path.with_file_name(format!("{stem}_{sector}.bin"));
         println!("cargo:rerun-if-changed={}", asm.display());
         let status = Command::new("nasm")
             .args(["-f", "bin", "-o", bin.to_str().unwrap(), asm.to_str().unwrap()])
@@ -83,9 +91,9 @@ fn build_multi(dir: &Path, out_path: &Path, embed: bool) {
             panic!("nasm failed for {}", asm.display());
         }
         let bytes = fs::read(&bin).unwrap_or_else(|_| panic!("read {}", bin.display()));
-        if bytes.len() != 512 {
+        if bytes.is_empty() || bytes.len() % 512 != 0 {
             panic!(
-                "{} assembled to {} bytes, expected exactly 512",
+                "{} assembled to {} bytes, expected non-zero multiple of 512",
                 asm.display(),
                 bytes.len()
             );

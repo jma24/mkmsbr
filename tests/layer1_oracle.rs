@@ -144,25 +144,23 @@ fn fat32_pbr_ntldr_distance_from_mssys() {
     assert_distance("fat32_pbr_ntldr", "--fat32nt (sector 0)", &ours, &theirs);
 }
 
-/// NTFS PBR baseline. Compares the boot-code regions of our `ntfs_pbr.asm`
-/// stub against ms-sys --ntfs sector 0. Until session 3 implements an
-/// actual $MFT walk, the stub is a halt loop and the Hamming distance
-/// will be near-maximal — that's the point of the eval-first methodology
-/// (`docs/SPEC.md` §Eval-first Step 0: "the evals fail at this point.
-/// That's the point").
-///
-/// This test will start passing the SUSPICIOUSLY_LOW threshold check
-/// trivially (distance is large), but the eprintln baseline lets us
-/// track convergence as the NTFS implementation matures.
+/// NTFS PBR baseline. Compares the boot-code regions of sector 0 of our
+/// multi-sector `ntfs_pbr_bootmgr` blob against ms-sys --ntfs sector 0.
+/// Our sector 0 is the tiny stage-1 stub (read 2 sectors → far-JMP);
+/// ms-sys's --ntfs is a single-sector MFT walker. So the Hamming
+/// distance is expected to be LARGE — the eval just guards against
+/// suspiciously low distance (clean-room mechanism #4); a full L1
+/// byte-match against --ntfs would require us also collapsing to
+/// single-sector, which the spec sizes the variant against.
 ///
 /// Requires Docker for the NTFS image build. Test surfaces a clear skip
 /// message if Docker is unavailable.
 #[test]
 #[ignore]
 fn ntfs_pbr_bootmgr_distance_from_mssys() {
-    if bootrec::NTFS_PBR_BOOT.is_empty() {
+    if bootrec::NTFS_PBR_BOOTMGR_MULTI_BOOT.is_empty() {
         panic!(
-            "NTFS_PBR_BOOT is empty (built without --features embed-boot-asm). \
+            "NTFS_PBR_BOOTMGR_MULTI_BOOT is empty (built without --features embed-boot-asm). \
              Re-run with --features \"embed-boot-asm compare-mssys\"."
         );
     }
@@ -177,7 +175,7 @@ fn ntfs_pbr_bootmgr_distance_from_mssys() {
     let theirs = oracle::ms_sys_ntfs_pbr_sector0()
         .unwrap_or_else(|e| panic!("ms-sys NTFS PBR oracle failed: {e}"));
     let mut ours_full = [0u8; 512];
-    ours_full.copy_from_slice(&bootrec::NTFS_PBR_BOOT[0..512]);
+    ours_full.copy_from_slice(&bootrec::NTFS_PBR_BOOTMGR_MULTI_BOOT[0..512]);
     let ours = ntfs_pbr_bootcode_regions(&ours_full);
     let theirs = ntfs_pbr_bootcode_regions(&theirs);
     assert_distance("ntfs_pbr_bootmgr", "--ntfs (sector 0)", &ours, &theirs);

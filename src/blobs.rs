@@ -36,7 +36,13 @@ pub const FAT32_PBR_BOOTMGR_MULTI_BOOT: &[u8] =
 pub const FAT32_PBR_NTLDR_BOOT: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/fat32_pbr_ntldr.bin"));
 
-pub const NTFS_PBR_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ntfs_pbr.bin"));
+/// NTFS PBR boot code, multi-sector BOOTMGR variant. 1024 bytes
+/// (sector 0 stage 1 + sector 1 stage 2). Caller splices through
+/// [`crate::splice_ntfs_pbr_multi`]. Single-sector NTFS PBRs do not
+/// fit the MFT walker + data-run parser in 426 bytes, so NTFS is
+/// multi-sector from day one (see `boot-asm/ntfs_pbr_bootmgr/`).
+pub const NTFS_PBR_BOOTMGR_MULTI_BOOT: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/ntfs_pbr_bootmgr_multi.bin"));
 
 /// Returns `true` if the boot blobs were embedded at build time.
 pub fn embedded() -> bool {

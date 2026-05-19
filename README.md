@@ -50,15 +50,20 @@ What works now:
 - `splice_fat32_pbr` — the BPB-preserving splice (the single most important
   primitive; see `src/pbr.rs`).
 - `build_mbr` + `PartitionEntry` — single-FAT32-active MBR layout.
-- Seed NASM sources for `mbr.asm`, `fat32_pbr.asm`, `ntfs_pbr.asm`,
-  plus a `fake_bootmgr.asm` stub for the QEMU smoke test.
-- A QEMU smoke test harness (`tests/qemu_pbr.rs`) that boots a synthetic
-  FAT32 image through our PBR and asserts the chain-load worked.
+- NASM sources for `mbr_xp.asm`, `mbr_win7.asm`, `fat32_pbr_ntldr.asm`,
+  `fat32_pbr_bootmgr/` (multi-sector), and `ntfs_pbr_bootmgr/`
+  (multi-sector), plus a `fake_bootmgr.asm` stub for the QEMU smoke
+  tests.
+- QEMU smoke test harnesses that boot synthetic FAT32 + NTFS images
+  through our PBRs and assert the chain-load worked
+  (`tests/qemu_pbr.rs`, `tests/qemu_ntfs_pbr.rs`).
 
 Doesn't work yet:
 
 - Layer-4 (real-hardware boot) — only the user can run that pipeline
-- `ntfs_pbr_bootmgr` variant
+- L3 (real Win 7 NTFS install) against the `ntfs_pbr_bootmgr` variant
+  — INDEX_ALLOCATION B+tree descent + USA fixups + $MFT extent walking
+  required first (see `docs/BACKLOG.md`)
 - A proper CLI binary (library + tests only for now)
 - Anything in `docs/SPEC.md` §Component breakdown beyond initial sketches
 
