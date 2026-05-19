@@ -57,10 +57,18 @@ What works now:
 
 Doesn't work yet:
 
-- ms-sys oracle layer (Layer 1)
-- Real-content boot tests (Layer 3)
-- A proper CLI binary
+- Real-content QEMU boot tests (Layer 3) — fixtures stage cleanly via
+  `scripts/build_l3_fixtures.sh`, but the QEMU pass/fail signal for real
+  NTLDR / bootmgr is still an open question (see `docs/BACKLOG.md`)
+- Layer-4 (real-hardware boot) — only the user can run that pipeline
+- `ntfs_pbr_bootmgr` variant
+- A proper CLI binary (library + tests only for now)
 - Anything in `docs/SPEC.md` §Component breakdown beyond initial sketches
+
+Works:
+
+- ms-sys byte-distance oracle (Layer 1) across MBR + single/multi-sector
+  PBR variants — see `tests/layer1_oracle.rs`
 
 ## Build
 
@@ -77,11 +85,29 @@ cargo build --release --features embed-boot-asm
 ## Test
 
 ```sh
-cargo test                                          # unit tests
-cargo test --test qemu_pbr --features embed-boot-asm -- --ignored   # QEMU smoke
+cargo test                                                                            # unit tests
+cargo test --test qemu_pbr --features embed-boot-asm -- --ignored                     # L2 QEMU smoke
+cargo test --test layer1_oracle --features "embed-boot-asm compare-mssys" -- --ignored # L1 ms-sys oracle
 ```
 
-The QEMU smoke test needs `qemu-system-i386`, `mformat`, `mcopy` (`brew install qemu mtools`).
+The L2 QEMU smoke test needs `qemu-system-i386`, `mformat`, `mcopy`
+(`brew install qemu mtools`). The L1 oracle additionally needs ms-sys
+(`git clone https://gitlab.com/cmaiolino/ms-sys.git /tmp/ms-sys && make -C /tmp/ms-sys`).
+
+### Layer 3 (real Microsoft boot binaries)
+
+The L3 fixture script extracts NTLDR / NTDETECT.COM / bootmgr / BCD from
+install ISOs you hold a license for, into `tests/real_content/` (gitignored,
+never redistributed):
+
+```sh
+scripts/build_l3_fixtures.sh \
+    --xp-iso /path/to/winxp_sp3.iso \
+    --win7-iso /path/to/win7.iso
+```
+
+The L3 smoke test that consumes these is still TODO — the pass/fail signal
+for real Microsoft loaders is the open work. See `docs/BACKLOG.md`.
 
 ## Clean-room
 

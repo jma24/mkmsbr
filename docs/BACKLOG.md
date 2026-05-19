@@ -10,7 +10,8 @@ the eval-first methodology is paying compounding interest. As of
 this writing, 4 of 5 variants ship at their `boot-asm/` Layer-2
 target in a single development arc.
 
-Last updated: 2026-05-18, after commit `3348398`.
+Last updated: 2026-05-18, after the L1-multi-oracle + L3-fixture-infra
+session (post-commit `069935b`, uncommitted).
 
 ## Variant matrix
 
@@ -25,7 +26,7 @@ Microsoft files. "L4" = real-hardware boot.
 | `mbr_win7`                  | ✓ 396/440 vs `--mbr7`    | ✓          | n/a       | —       | L1+L2       | shipped at spec target |
 | `fat32_pbr_ntldr`           | ✓ 398/423 vs `--fat32nt` | ✓          | —         | —       | L1+L2+L3    | L3 pending |
 | `fat32_pbr_bootmgr` (single)| ✓ 392/423 vs `--fat32pe` | ✓          | unproven  | unproven| —           | legacy / smoke baseline |
-| `fat32_pbr_bootmgr` (multi) | —                        | ✓          | —         | —       | L2+L3+L4    | L1 + L3 + L4 pending |
+| `fat32_pbr_bootmgr` (multi) | ✓ ≥378/512 vs `--fat32pe` s1..15 | ✓    | —         | —       | L2+L3+L4    | L3 + L4 pending |
 | `ntfs_pbr_bootmgr`          | —                        | —          | —         | —       | L2+L3       | not started |
 
 The single-sector `fat32_pbr_bootmgr` is kept as a smoke-test baseline.
@@ -34,22 +35,23 @@ The multi-sector variant is the v1.0 target (`docs/SPEC.md` line 132).
 ## Per-variant remaining work
 
 ### `fat32_pbr_ntldr` to spec target
-- **L3 fixture from a Win XP ISO** — `tests/real_content/` per spec
-  §Real-content fixtures. Needs the user to supply an ISO path; the
-  fixture-build script extracts a minimal subset and a real `NTLDR` so
-  the smoke test can confirm chain-load works against actual Microsoft
-  files. *Blocks: spec L3 target.*
+- **L3 smoke test (`tests/qemu_pbr_real.rs`)** — fixtures already staged
+  by `scripts/build_l3_fixtures.sh` (NTLDR + NTDETECT.COM under
+  `tests/real_content/xp/`). Open question: what's the pass/fail signal?
+  Real NTLDR doesn't write to COM1, so the L2 "BOOTREC OK" trick doesn't
+  carry over. Candidate signals: (1) qemu `-trace bdrv_aio_readv` and
+  assert N > some threshold (NTLDR self-loads many sectors; our PBR alone
+  reads ~3); (2) `pmemsave` after timeout, grep for NTLDR's embedded
+  strings; (3) VGA framebuffer screendump + ASCII recognition. Option 1
+  is probably cleanest. *Blocks: spec L3 target.*
 
 ### `fat32_pbr_bootmgr` multi-sector to spec target
-- **L1 oracle for multi-sector.** Current oracle only compares sector 0.
-  Extend to compare sector 1 too (bytes-equality against ms-sys's
-  sectors 1 and 12 — note ms-sys is 16 sectors, ours is 2; alignment
-  question to resolve). *Not gating but a missing eval signal.*
-- **L3 fixture from a Win 7 ISO.** Same shape as ntldr L3 but with
-  real `bootmgr` + `Boot/BCD`. The known hard question: does our
-  2-sector layout satisfy real `bootmgr`'s contract, or does it need
-  the full 16-sector Microsoft layout? Will discover at this gate.
-  *Blocks: spec L3 target.*
+- **L3 smoke test** — fixtures already staged (`tests/real_content/win7/`
+  `bootmgr` + `bcd`). Same signal-detection question as the ntldr L3.
+  Additional unknown: does our 2-sector layout satisfy real `bootmgr`'s
+  contract, or does it need the full 16-sector Microsoft layout? The L1
+  oracle showed ms-sys populates sectors 0, 1, 2, 6, 12 — stage 2+ code
+  is in 2/6/12, not in 1. Test will discover this. *Blocks: spec L3 target.*
 - **L4 real-hardware verification.** Dell E6410 + 2010-2015 Intel
   desktop + 2005-vintage P4. *Blocks: spec L4 target / 1.0 release.*
 
@@ -66,11 +68,11 @@ The multi-sector variant is the v1.0 target (`docs/SPEC.md` line 132).
 | Item                                | Spec ref           | Status |
 |-------------------------------------|--------------------|--------|
 | Layer 1 oracle (ms-sys subprocess)  | §Verifiability     | ✓ MBR + PBR sector 0 |
-| Layer 1 oracle for multi-sector PBR | §Verifiability     | TODO (note above) |
+| Layer 1 oracle for multi-sector PBR | §Verifiability     | ✓ — ms-sys populates sectors 0,1,2,6,12; best sector-1 match Hamming 378/512 |
 | Layer 2 QEMU harness (FAT32 PBR)    | §Eval-first        | ✓ single + multi |
 | Layer 2 QEMU harness (MBR)          | §Eval-first        | ✓ both variants |
 | Layer 2 QEMU harness (NTFS)         | §Eval-first        | TODO |
-| Layer 3 fixture build script        | §Real-content      | TODO |
+| Layer 3 fixture build script        | §Real-content      | ✓ `scripts/build_l3_fixtures.sh` (XP + Win 7) |
 | Layer 4 hardware checklist          | §Layer 4           | TODO |
 | Statistical similarity check        | §Clean-room mech 4 | ✓ in layer1_oracle.rs |
 | Forbidden-symbol grep               | §Clean-room mech 3 | ✓ scripts/clean_room_check.sh |
@@ -137,3 +139,13 @@ The multi-sector variant is the v1.0 target (`docs/SPEC.md` line 132).
   expected to take longer because of unknown filesystem/contract details.
 - v1.0 ship date is gated by L4 (real hardware) — the user runs that
   pipeline; everything else is bootrec-side work.
+- **Next session candidate: L3 smoke test signal detection.** Fixtures
+  are staged; what's missing is a way to tell whether QEMU is running
+  *our PBR's error halt* vs *real NTLDR / bootmgr code*. Leading approach:
+  `qemu -trace bdrv_aio_readv` and gate on disk-read count (real loaders
+  self-load → many reads; our PBR alone does ~3). Alternates: `pmemsave`
+  + string grep, VGA screendump. Pick one in a focused session.
+- **Open data point from this session's L1 multi-sector oracle:** ms-sys
+  `--fat32pe` populates sectors 0, 1, 2, 6, 12 — not "0/1/12" as the old
+  TODO speculated. Stage-2 code lives in sectors 2/6/12; sector 1 carries
+  only 11 non-zero bytes. Affects any future multi-sector layout debate.
