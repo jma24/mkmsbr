@@ -109,3 +109,56 @@ fn mbr_boot_code(args: &[&str]) -> Result<[u8; 440], String> {
     out.copy_from_slice(&buf[0..440]);
     Ok(out)
 }
+
+/// Run ms-sys --fat32pe and return sector 0 of the resulting FAT32 PBR.
+/// The image is formatted as FAT32 first (ms-sys reads the existing BPB
+/// to know how to splice). Caller compares only boot-code regions —
+/// bytes 0..3 (jump) + 90..510 (boot code) — since the BPB at 3..90
+/// is filesystem state and varies by formatter.
+pub fn ms_sys_fat32_bootmgr_pbr() -> Result<[u8; 512], String> {
+    fat32_pbr_sector0(&["--fat32pe"])
+}
+
+/// Run ms-sys --fat32nt (XP NTLDR variant) and return sector 0 of the PBR.
+pub fn ms_sys_fat32_ntldr_pbr() -> Result<[u8; 512], String> {
+    fat32_pbr_sector0(&["--fat32nt"])
+}
+
+fn fat32_pbr_sector0(args: &[&str]) -> Result<[u8; 512], String> {
+    use std::io::Read;
+    let tmp = std::env::temp_dir().join(format!(
+        "bootrec-pbr-oracle-{}-{}",
+        args[0].trim_start_matches('-'),
+        std::process::id()
+    ));
+    // Step 1: allocate a 64 MiB raw file. Big enough that mformat picks
+    // sane FAT32 parameters; ms-sys's behavior is BPB-dependent.
+    std::fs::write(&tmp, vec![0u8; 64 * 1024 * 1024])
+        .map_err(|e| format!("seed image: {e}"))?;
+
+    // Step 2: format as FAT32 via mformat (no root, no auto-mount races).
+    let fmt = std::process::Command::new("mformat")
+        .args(["-F", "-i"])
+        .arg(&tmp)
+        .args(["-v", "BOOTREC", "::"])
+        .output()
+        .map_err(|e| format!("mformat: {e}"))?;
+    if !fmt.status.success() {
+        return Err(format!(
+            "mformat failed: {}",
+            String::from_utf8_lossy(&fmt.stderr)
+        ));
+    }
+
+    // Step 3: run ms-sys with -f so it writes to the regular file.
+    let mut full_args: Vec<&str> = args.to_vec();
+    full_args.push("-f");
+    run_ms_sys(&full_args, &tmp)?;
+
+    // Step 4: read sector 0.
+    let mut f = std::fs::File::open(&tmp).map_err(|e| format!("open: {e}"))?;
+    let mut buf = [0u8; 512];
+    f.read_exact(&mut buf).map_err(|e| format!("read: {e}"))?;
+    let _ = std::fs::remove_file(&tmp);
+    Ok(buf)
+}

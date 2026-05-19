@@ -13,7 +13,17 @@ pub const MBR_XP_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mbr_xp.
 /// partition has type 0xEE the MBR halts rather than chain-load.
 pub const MBR_WIN7_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mbr_win7.bin"));
 
-pub const FAT32_PBR_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/fat32_pbr.bin"));
+/// FAT32 PBR boot code for the BOOTMGR-loading variant (Win 7/8/10/11
+/// install media). 512 bytes, single-sector. Caller splices this through
+/// [`crate::splice_fat32_pbr`] so the partition's actual BPB is preserved.
+pub const FAT32_PBR_BOOTMGR_BOOT: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/fat32_pbr_bootmgr.bin"));
+
+/// FAT32 PBR boot code for the NTLDR-loading variant (Win 2000/XP/2003).
+/// 512 bytes, single-sector.
+pub const FAT32_PBR_NTLDR_BOOT: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/fat32_pbr_ntldr.bin"));
+
 pub const NTFS_PBR_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ntfs_pbr.bin"));
 
 /// Returns `true` if the boot blobs were embedded at build time.

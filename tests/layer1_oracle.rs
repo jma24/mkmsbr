@@ -61,8 +61,16 @@ fn mbr_win7_bootcode_distance_from_mssys() {
 }
 
 fn assert_distance(variant: &str, mssys_flag: &str, ours: &[u8], theirs: &[u8]) {
+    assert_eq!(
+        ours.len(),
+        theirs.len(),
+        "[{variant}] length mismatch: ours={} theirs={}",
+        ours.len(),
+        theirs.len()
+    );
+    let total = ours.len();
     let diffs = ours.iter().zip(theirs.iter()).filter(|(a, b)| a != b).count();
-    eprintln!("{variant}: Hamming distance from ms-sys {mssys_flag} = {diffs}/440 bytes");
+    eprintln!("{variant}: Hamming distance from ms-sys {mssys_flag} = {diffs}/{total} bytes");
     if diffs == 0 {
         eprintln!("  Byte-identical to ms-sys. Either remarkable parallel invention");
         eprintln!("  or the cleanroom protocol failed — review the asm source.");
@@ -75,6 +83,54 @@ fn assert_distance(variant: &str, mssys_flag: &str, ours: &[u8], theirs: &[u8]) 
              relax the threshold here with justification."
         );
     }
+}
+
+// PBR layer-1 evals: compare only the boot-code regions (bytes 0..3 +
+// 90..510 = 423 bytes). The 87-byte BPB at offsets 3..90 is filesystem
+// state, not boot code, and varies by the formatter — comparing it
+// would just measure mformat-vs-ms-sys-formatter differences, which
+// isn't what we care about.
+fn pbr_bootcode_regions(sector0: &[u8; 512]) -> Vec<u8> {
+    let mut v = Vec::with_capacity(423);
+    v.extend_from_slice(&sector0[0..3]);
+    v.extend_from_slice(&sector0[90..510]);
+    v
+}
+
+#[test]
+#[ignore]
+fn fat32_pbr_bootmgr_distance_from_mssys() {
+    if bootrec::FAT32_PBR_BOOTMGR_BOOT.is_empty() {
+        panic!(
+            "FAT32_PBR_BOOTMGR_BOOT is empty (built without --features embed-boot-asm). \
+             Re-run with --features \"embed-boot-asm compare-mssys\"."
+        );
+    }
+    let theirs = oracle::ms_sys_fat32_bootmgr_pbr()
+        .unwrap_or_else(|e| panic!("ms-sys PBR oracle failed: {e}"));
+    let mut ours_full = [0u8; 512];
+    ours_full.copy_from_slice(&bootrec::FAT32_PBR_BOOTMGR_BOOT[0..512]);
+    let ours = pbr_bootcode_regions(&ours_full);
+    let theirs = pbr_bootcode_regions(&theirs);
+    assert_distance("fat32_pbr_bootmgr", "--fat32pe (sector 0)", &ours, &theirs);
+}
+
+#[test]
+#[ignore]
+fn fat32_pbr_ntldr_distance_from_mssys() {
+    if bootrec::FAT32_PBR_NTLDR_BOOT.is_empty() {
+        panic!(
+            "FAT32_PBR_NTLDR_BOOT is empty (built without --features embed-boot-asm). \
+             Re-run with --features \"embed-boot-asm compare-mssys\"."
+        );
+    }
+    let theirs = oracle::ms_sys_fat32_ntldr_pbr()
+        .unwrap_or_else(|e| panic!("ms-sys PBR oracle failed: {e}"));
+    let mut ours_full = [0u8; 512];
+    ours_full.copy_from_slice(&bootrec::FAT32_PBR_NTLDR_BOOT[0..512]);
+    let ours = pbr_bootcode_regions(&ours_full);
+    let theirs = pbr_bootcode_regions(&theirs);
+    assert_distance("fat32_pbr_ntldr", "--fat32nt (sector 0)", &ours, &theirs);
 }
 
 // TODO: PBR byte-equality eval (fat32_pbr_bootmgr vs ms-sys --fat32pe).
