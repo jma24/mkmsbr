@@ -174,6 +174,68 @@ fn fat32_pbr_sector0(args: &[&str]) -> Result<[u8; 512], String> {
     Ok(buf)
 }
 
+/// Run ms-sys --ntfs and return sector 0 of the resulting NTFS PBR. The
+/// image is formatted as NTFS first (ms-sys reads the existing BPB at
+/// bytes 11..84 to know how to splice).
+///
+/// Caller compares only boot-code regions — bytes 0..3 (jump) + 84..510
+/// (boot code) = 429 bytes. The OEM at 3..11 and BPB at 11..84 are
+/// filesystem state, not boot code, and vary by the formatter.
+pub fn ms_sys_ntfs_pbr_sector0() -> Result<[u8; 512], String> {
+    ntfs_pbr_sector0(&["--ntfs"])
+}
+
+/// Run ms-sys --ntfs and return the first 16 sectors (8 KiB) of the
+/// resulting PBR. Empirically (2026-05-18) ms-sys writes ~9 sectors
+/// (sectors 0..8 carry boot code; sector 8 has ~32 trailing bytes). We
+/// read 16 to be safe and so the eval can adapt if ms-sys's layout
+/// changes between versions. Caller decides which sectors to compare.
+pub fn ms_sys_ntfs_pbr_sectors_0_15() -> Result<[u8; 8192], String> {
+    ntfs_pbr_sectors_0_15(&["--ntfs"])
+}
+
+fn ntfs_pbr_sector0(args: &[&str]) -> Result<[u8; 512], String> {
+    use std::io::Read;
+    let tmp = std::env::temp_dir().join(format!(
+        "bootrec-ntfs-pbr-oracle-{}-{}",
+        args[0].trim_start_matches('-'),
+        std::process::id()
+    ));
+    // 64 MiB matches the FAT32 oracle for ballpark parity; mkfs.ntfs needs
+    // at least ~2 MiB to allocate its $MFT region, so 64 MiB is generous.
+    super::ntfs_image::mkfs_ntfs(&tmp, 64 * 1024 * 1024)?;
+
+    let mut full_args: Vec<&str> = args.to_vec();
+    full_args.push("-f");
+    run_ms_sys(&full_args, &tmp)?;
+
+    let mut f = std::fs::File::open(&tmp).map_err(|e| format!("open: {e}"))?;
+    let mut buf = [0u8; 512];
+    f.read_exact(&mut buf).map_err(|e| format!("read: {e}"))?;
+    let _ = std::fs::remove_file(&tmp);
+    Ok(buf)
+}
+
+fn ntfs_pbr_sectors_0_15(args: &[&str]) -> Result<[u8; 8192], String> {
+    use std::io::Read;
+    let tmp = std::env::temp_dir().join(format!(
+        "bootrec-ntfs-pbr-oracle-multi-{}-{}",
+        args[0].trim_start_matches('-'),
+        std::process::id()
+    ));
+    super::ntfs_image::mkfs_ntfs(&tmp, 64 * 1024 * 1024)?;
+
+    let mut full_args: Vec<&str> = args.to_vec();
+    full_args.push("-f");
+    run_ms_sys(&full_args, &tmp)?;
+
+    let mut f = std::fs::File::open(&tmp).map_err(|e| format!("open: {e}"))?;
+    let mut buf = [0u8; 8192];
+    f.read_exact(&mut buf).map_err(|e| format!("read: {e}"))?;
+    let _ = std::fs::remove_file(&tmp);
+    Ok(buf)
+}
+
 fn fat32_pbr_sectors_0_15(args: &[&str]) -> Result<[u8; 8192], String> {
     use std::io::Read;
     let tmp = std::env::temp_dir().join(format!(

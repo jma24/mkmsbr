@@ -97,6 +97,17 @@ fn pbr_bootcode_regions(sector0: &[u8; 512]) -> Vec<u8> {
     v
 }
 
+// NTFS boot-code regions: bytes 0..3 (jump) + 84..510 (boot code) = 429
+// bytes. The NTFS BPB is 73 bytes at offsets 11..84 (vs FAT32's 87
+// bytes at 3..90), and the OEM at 3..11 is the "NTFS    " literal
+// which is filesystem-state too, not boot code.
+fn ntfs_pbr_bootcode_regions(sector0: &[u8; 512]) -> Vec<u8> {
+    let mut v = Vec::with_capacity(429);
+    v.extend_from_slice(&sector0[0..3]);
+    v.extend_from_slice(&sector0[84..510]);
+    v
+}
+
 #[test]
 #[ignore]
 fn fat32_pbr_bootmgr_distance_from_mssys() {
@@ -131,6 +142,45 @@ fn fat32_pbr_ntldr_distance_from_mssys() {
     let ours = pbr_bootcode_regions(&ours_full);
     let theirs = pbr_bootcode_regions(&theirs);
     assert_distance("fat32_pbr_ntldr", "--fat32nt (sector 0)", &ours, &theirs);
+}
+
+/// NTFS PBR baseline. Compares the boot-code regions of our `ntfs_pbr.asm`
+/// stub against ms-sys --ntfs sector 0. Until session 3 implements an
+/// actual $MFT walk, the stub is a halt loop and the Hamming distance
+/// will be near-maximal — that's the point of the eval-first methodology
+/// (`docs/SPEC.md` §Eval-first Step 0: "the evals fail at this point.
+/// That's the point").
+///
+/// This test will start passing the SUSPICIOUSLY_LOW threshold check
+/// trivially (distance is large), but the eprintln baseline lets us
+/// track convergence as the NTFS implementation matures.
+///
+/// Requires Docker for the NTFS image build. Test surfaces a clear skip
+/// message if Docker is unavailable.
+#[test]
+#[ignore]
+fn ntfs_pbr_bootmgr_distance_from_mssys() {
+    if bootrec::NTFS_PBR_BOOT.is_empty() {
+        panic!(
+            "NTFS_PBR_BOOT is empty (built without --features embed-boot-asm). \
+             Re-run with --features \"embed-boot-asm compare-mssys\"."
+        );
+    }
+    match common::ntfs_image::docker_status() {
+        common::ntfs_image::DockerStatus::Available => {}
+        common::ntfs_image::DockerStatus::Missing(reason) => {
+            eprintln!("skipping NTFS L1 test: {reason}");
+            return;
+        }
+    }
+
+    let theirs = oracle::ms_sys_ntfs_pbr_sector0()
+        .unwrap_or_else(|e| panic!("ms-sys NTFS PBR oracle failed: {e}"));
+    let mut ours_full = [0u8; 512];
+    ours_full.copy_from_slice(&bootrec::NTFS_PBR_BOOT[0..512]);
+    let ours = ntfs_pbr_bootcode_regions(&ours_full);
+    let theirs = ntfs_pbr_bootcode_regions(&theirs);
+    assert_distance("ntfs_pbr_bootmgr", "--ntfs (sector 0)", &ours, &theirs);
 }
 
 /// Multi-sector eval. Our blob is 2 sectors; ms-sys's `--fat32pe` layout
