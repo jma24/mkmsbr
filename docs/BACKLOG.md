@@ -10,9 +10,12 @@ the eval-first methodology is paying compounding interest. As of
 this writing, 4 of 5 variants ship at their `boot-asm/` Layer-2
 target in a single development arc.
 
-Last updated: 2026-05-18, after `ntfs_pbr_bootmgr` (multi-sector) hit L2
-green against an ntfs-3g fixture in QEMU (`tests/qemu_ntfs_pbr.rs`,
-uncommitted).
+Last updated: 2026-05-18, after `ntfs_pbr_bootmgr` (multi-sector)
+landed USA fixups, $INDEX_ALLOCATION B+tree handling (linear scan over
+every INDX block in every data run), $MFT extent chasing (run table
+populated from $MFT record 0's $DATA), and $INDEX_ROOT inline scanning.
+All four pre-existing "known L2 limitations" are addressed; stage 2 is
+943/1024 bytes, L2 still green in ~16 s.
 
 ## Variant matrix
 
@@ -28,7 +31,7 @@ Microsoft files. "L4" = real-hardware boot.
 | `fat32_pbr_ntldr`           | ✓ 398/423 vs `--fat32nt` | ✓          | ✓ 990 reads | —     | L1+L2+L3    | shipped at spec target |
 | `fat32_pbr_bootmgr` (single)| ✓ 392/423 vs `--fat32pe` | ✓          | unproven  | unproven| —           | legacy / smoke baseline |
 | `fat32_pbr_bootmgr` (multi) | ✓ ≥378/512 vs `--fat32pe` s1..15 | ✓    | ✓ 1520 reads | —  | L2+L3+L4    | L4 pending |
-| `ntfs_pbr_bootmgr` (multi)  | TODO                     | ✓ (ntfs-3g) | unproven  | —       | L2+L3       | L2 green; L1 + L3 pending |
+| `ntfs_pbr_bootmgr` (multi)  | TODO                     | ✓ (ntfs-3g, all limitations addressed) | unproven  | —       | L2+L3       | L2 green; L1 + L3 pending |
 
 The single-sector `fat32_pbr_bootmgr` is kept as a smoke-test baseline.
 The multi-sector variant is the v1.0 target (`docs/SPEC.md` line 132).
@@ -62,20 +65,38 @@ The multi-sector variant is the v1.0 target (`docs/SPEC.md` line 132).
   ntfs-3g-formatted 16 MiB image under QEMU via
   `tests/qemu_ntfs_pbr.rs` (Docker is the macOS workaround for the
   missing `mkfs.ntfs`).
-- **Known L2 limitations** (deferred to L3 work):
-  - INDEX_ROOT inline path not implemented — works because ntfs-3g
-    always allocates INDEX_ALLOCATION for the root dir, but
-    Microsoft's `format` on small volumes may keep entries inline.
-  - INDEX_ALLOCATION B+tree descent not implemented — only the first
-    INDX block is scanned. Real Win 7 install media has more root
-    entries; will need sub-node descent.
-  - USA (Update Sequence Array) fixups skipped — works because the
-    L2 fixture's BOOTMGR entry lives well before sector-end fixup
-    offsets; real volumes will need fixup logic.
-  - $MFT's own data runs not walked — assumes records 0..N are in
-    the first MFT extent. True for fresh volumes; will need extent
-    chasing if the target BOOTMGR record number exceeds the first
-    extent.
+- **Known L2 limitations** (all addressed 2026-05-18; smoke-validated
+  against the ntfs-3g L2 fixture, full real-volume validation gated on
+  the L3 image arriving 2026-05-19):
+  - ~~INDEX_ROOT inline path not implemented~~ — **shipped** 2026-05-18.
+    Stage 2 now scans $INDEX_ROOT's inline entries first; if not found
+    and the INDEX_HEADER's LARGE_INDEX flag (0x01) is clear, dies with
+    'F' (small dir, no $INDEX_ALLOCATION to walk); if set, falls
+    through into the existing $INDEX_ALLOCATION walk. Single code
+    addition reuses the same entry-scan layout; converges on the
+    common `.load_bootmgr` path before the $DATA walker.
+  - ~~INDEX_ALLOCATION B+tree descent not implemented~~ —
+    **shipped** 2026-05-18 as a linear scan over every INDX block in
+    every data run of $INDEX_ALLOCATION. Avoids true sub-node descent:
+    interior-node separator entries copy the leaf-level key, so a
+    name surfaces in some block regardless of tree level. Assumes
+    IndexBlockSize == ClusterSize (holds for ntfs-3g default + Win 7
+    Setup's 4 KiB cluster layout). L2 still green.
+  - ~~USA (Update Sequence Array) fixups skipped~~ — **shipped**
+    2026-05-18 as `apply_fixups` in `sector1.asm`; called after every
+    `read_mft_rec` and after the root INDX read. Restores the last
+    2 bytes of each 512-byte sector from the in-record USA. L2 still
+    green; the L2 fixture's BOOTMGR entry was before offset 510 so
+    the fixup is a no-op there, but real Win 7 INDX entries straddle
+    sector boundaries and would have been corrupted without it.
+  - ~~$MFT's own data runs not walked~~ — **shipped** 2026-05-18.
+    Init now reads MFT record 0, parses its $DATA runs into a small
+    table at 0x7B20 (LCN + length per extent, terminator-zeroed),
+    and `read_mft_rec` walks that table to map any record N → LBA.
+    Bootstrapped with a synthetic huge entry at BPB.MftLcn so the
+    record-0 read itself goes through the same code path. New error
+    codes: 'M' = $MFT $DATA was resident; 'O' = record number past
+    end of run table. L2 still green.
   - Resident $DATA unsupported — fake bootmgr must be padded past
     NTFS's resident-attribute threshold (~700 B) in the L2 test.
 - **L1 oracle.** ms-sys `--ntfs` byte-distance comparison TODO.
@@ -174,11 +195,14 @@ The multi-sector variant is the v1.0 target (`docs/SPEC.md` line 132).
   only 11 non-zero bytes. The L3 result above shows our 2-sector layout
   is enough to reach bootmgr's BCD-reading phase under QEMU; whether
   real hardware needs more (L4) is the remaining open question.
-- **Next session candidates** now that L3 is green for both FAT32
-  variants:
-  1. `ntfs_pbr_bootmgr` from scratch (only remaining variant; the
-     biggest single spec gap).
-  2. CI / packaging push (GitHub Actions workflow, `src/bin/bootrec.rs`,
+- **Next session candidates** now that `ntfs_pbr_bootmgr` is L2-complete:
+  1. NTFS L3 fixture against the real Win 7 image (arriving 2026-05-19)
+     — exercises USA fixups / multi-block scan / extent chasing /
+     INDEX_ROOT inline against real Microsoft-formatted bytes for the
+     first time.
+  2. NTFS L1 ms-sys `--ntfs` oracle (last informational gap in the
+     variant matrix).
+  3. CI / packaging push (GitHub Actions workflow, `src/bin/bootrec.rs`,
      README install section, crates.io reservation) — none of which
      individually need bootrec internals knowledge.
-  3. L4 hardware verification — gated on user, not on the codebase.
+  4. L4 hardware verification — gated on user, not on the codebase.

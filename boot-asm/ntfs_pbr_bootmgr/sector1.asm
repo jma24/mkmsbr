@@ -18,16 +18,22 @@
 ;   8. Walk its data runs, INT 13h-read each extent into BOOTMGR_SEG:0.
 ;   9. Far-JMP BOOTMGR_SEG:0 with DL preserved.
 ;
-; Why INDEX_ALLOCATION-only: ntfs-3g's mkfs.ntfs allocates an
-; INDEX_ALLOCATION attribute for the root directory even when only one
-; file exists, leaving INDEX_ROOT as a single sub-node sentinel. The
-; INDEX_ROOT-inline path is a Microsoft-format-specific case; supporting
-; it (plus full B+tree descent) is the L3 expansion documented in
-; docs/BACKLOG.md.
+; B+tree handling: rather than descending via subnode pointers, we scan
+; entries breadth-agnostic — first the inline entries in $INDEX_ROOT,
+; then (if LARGE_INDEX flag is set and we still haven't matched) every
+; INDX block in every run of $INDEX_ALLOCATION. Interior-node separator
+; entries copy the leaf-level key, so the BOOTMGR filename surfaces in
+; some block regardless of which level it lives at. Assumes
+; IndexBlockSize == ClusterSize, which holds for the ntfs-3g default
+; and Win 7 Setup's 4 KiB cluster layout.
 ;
-; Fixups (USA): NOT applied. For the L2 fixture's small dir, BOOTMGR's
-; entry lives well before the first sector-end fixup offset (510 in the
-; INDX block). L3 against real Microsoft volumes will need fixup logic.
+; Fixups (USA): applied to every multi-sector record after read. NTFS
+; stores a sentinel (the Update Sequence Number) at the last 2 bytes of
+; each 512-byte sector of a FILE/INDX record and stashes the originals
+; in the Update Sequence Array at header offset 0x04, sized in words at
+; 0x06 (= 1 USN + N sector fixups). On the L2 fixture BOOTMGR's entry
+; lives before offset 510 so the fixup is a no-op, but real Win 7 INDX
+; blocks have entries straddling sector boundaries.
 ;
 ; Clean-room references: Microsoft NTFS On-Disk Format public docs +
 ; OSDev wiki NTFS prose + Phoenix BIOS docs. See docs/PROVENANCE.md.
@@ -44,6 +50,9 @@ ORG 0x7E00
 %define MFT_LBA          0x7B04
 %define REC_SECTORS      0x7B08
 %define READ_LBA         0x7B0C
+%define MFT_RUNS         0x7B20       ; 8 bytes/entry: LCN (4) + length_clusters (4);
+                                      ; zero-length entry terminates. Up to ~28 runs
+                                      ; before hitting 0x7C00.
 
 %define DAP              0x0500
 %define BUF              0x6000
@@ -77,45 +86,152 @@ start:
 .rs_ok:
     mov [REC_SECTORS], ax
 
-    ; Read root MFT record (5).
-    mov eax, 5
+    ; Bootstrap MFT_RUNS with a single huge entry mapping LCN = BPB.MftLcn
+    ; so the first read_mft_rec (for record 0 itself) finds $MFT at the
+    ; canonical contiguous-layout LBA. After we read record 0 we parse its
+    ; $DATA runs and overwrite this table with the real extent map.
+    mov di, MFT_RUNS
+    mov eax, [0x7C00 + BPB_MftLcn]
+    mov [di], eax                       ; bootstrap LCN
+    mov dword [di + 4], 0x7FFFFFFF      ; pretend it spans the world
+    xor eax, eax
+    mov [di + 8], eax                   ; terminator LCN
+    mov [di + 12], eax                  ; terminator length (the field
+                                        ; read_mft_rec checks for end-of-table)
+
+    ; Read $MFT's own self-describing record (MFT record 0), then walk
+    ; its $DATA runs into MFT_RUNS so subsequent reads work for $MFTs
+    ; that span multiple extents.
+    xor eax, eax
     call read_mft_rec
-
-    ; Find INDEX_ALLOCATION (0xA0). Non-resident.
     mov bx, BUF
-    mov edx, 0xA0
+    mov edx, 0x80
     call find_attr
+    cmp byte [bx + 0x08], 0
+    je mft_data_resident
     movzx ax, word [bx + 0x20]
-    add bx, ax                          ; → data runs
-
-    ; Parse first run: header byte split into (offset_bytes<<4 | length_bytes).
+    add bx, ax                          ; → $DATA run list
+    mov di, MFT_RUNS
+    xor ebp, ebp                        ; running absolute LCN
+.mft_run:
     mov al, [bx]
     test al, al
-    jz .nf
+    jz .mft_runs_done
     inc bx
     mov ah, al
     and al, 0x0F
     shr ah, 4
     push ax
     mov cl, al
-    call read_le_unsigned               ; EDX = length (clusters) (unused; we read 1 cluster)
+    call read_le_unsigned               ; EDX = length (clusters)
+    mov ecx, edx
     pop ax
+    push ecx
     mov cl, ah
-    call read_le_signed                 ; EDX = absolute LCN (delta from 0)
+    call read_le_signed                 ; EDX = signed delta LCN
+    add ebp, edx                        ; → absolute LCN of this run
+    pop ecx
+    mov [di], ebp
+    mov [di + 4], ecx
+    add di, 8
+    jmp .mft_run
+.mft_runs_done:
+    xor eax, eax
+    mov [di], eax
+    mov [di + 4], eax                   ; terminator
 
-    ; LBA of INDX block = HiddSec + LCN * SecPerClus
-    mov eax, edx
+    ; Read root MFT record (5).
+    mov eax, 5
+    call read_mft_rec
+
+    ; Try $INDEX_ROOT (0x90) first. Small directories with no
+    ; $INDEX_ALLOCATION keep every entry here; large ones use
+    ; $INDEX_ROOT as the B+tree root only and set LARGE_INDEX.
+    mov bx, BUF
+    mov edx, 0x90
+    call find_attr
+    movzx ax, word [bx + 0x14]          ; ValueOffset (resident attr)
+    add bx, ax                          ; BX → INDEX_ROOT value
+    mov al, [bx + 0x1C]                 ; INDEX_HEADER.Flags
+    push ax                             ; stash for fallthrough decision
+    add bx, 0x10                        ; → INDEX_HEADER
+    movzx ax, word [bx]                 ; EntriesOffset (rel to header)
+    add bx, ax                          ; → first INDEX_ENTRY
+
+.root_scan:
+    test byte [bx + 0x0C], 0x02
+    jnz .root_done
+    cmp byte [bx + 0x50], 7
+    jne .root_skip
+    push bx
+    lea si, [bx + 0x52]
+    mov di, name
+    mov cx, 14
+    repe cmpsb
+    pop bx
+    je .root_hit
+.root_skip:
+    add bx, [bx + 0x08]
+    jmp .root_scan
+
+.root_hit:
+    add sp, 2                           ; drop stashed flags
+    mov eax, [bx]
+    call read_mft_rec
+    jmp .load_bootmgr
+
+.root_done:
+    pop ax                              ; recover INDEX_HEADER.Flags
+    test al, 0x01                       ; LARGE_INDEX → INDEX_ALLOCATION exists
+    jz .nf                              ; small dir, inline only, no BOOTMGR
+
+    ; Find INDEX_ALLOCATION (0xA0). Non-resident.
+    mov bx, BUF
+    mov edx, 0xA0
+    call find_attr
+    movzx ax, word [bx + 0x20]
+    add bx, ax                          ; BX → start of data-run list
+
+    xor ebp, ebp                        ; running absolute LCN (= start LCN of
+                                        ; the most recently parsed run; each
+                                        ; run's signed delta is relative to it)
+
+.idx_run:
+    mov al, [bx]
+    test al, al
+    jz .nf                              ; runs exhausted, BOOTMGR not found
+    inc bx
+    mov ah, al
+    and al, 0x0F
+    shr ah, 4
+    push ax                             ; save (length_bytes, offset_bytes)
+    mov cl, al
+    call read_le_unsigned               ; EDX = run length in clusters
+    mov ecx, edx                        ; ECX = run length
+    pop ax
+    push cx                             ; save length (16-bit; assumes < 65536)
+    mov cl, ah
+    call read_le_signed                 ; EDX = signed delta LCN
+    add ebp, edx                        ; EBP = absolute LCN of this run
+    pop cx                              ; ECX low = clusters in run
+
+    push bx                             ; preserve run-list pointer
+    push ebp                            ; preserve run-start LCN
+
+.idx_cluster:
+    push cx                             ; outer cluster counter
+
+    mov eax, ebp
     movzx ecx, byte [0x7C00 + BPB_SecPerClus]
     mul ecx
     add eax, [0x7C00 + BPB_HiddSec]
     mov [READ_LBA], eax
 
-    ; Read SecPerClus sectors into BUF — the root INDX block.
     mov ax, BUF_SEG
     mov es, ax
     xor di, di
     movzx cx, byte [0x7C00 + BPB_SecPerClus]
-.read_indx:
+.idx_read:
     push cx
     call read_one
     inc dword [READ_LBA]
@@ -123,44 +239,56 @@ start:
     add ax, 0x20
     mov es, ax
     pop cx
-    loop .read_indx
+    loop .idx_read
 
-    ; Walk entries. INDX block: bytes 0x00..0x18 are header, then an
-    ; index header at 0x18 whose [0x00] = first entry offset (relative).
-    ; Reset ES to 0 — the read loop left it pointing at the load segment,
-    ; but repe cmpsb in .scan compares DS:SI vs ES:DI and needs ES=0 so
-    ; DI (the in-code `name:` label) resolves correctly.
+    ; INDX block in BUF. Reset ES=0 so the `name:` label resolves via
+    ; ES:DI in repe cmpsb below.
     xor ax, ax
     mov es, ax
     mov bx, BUF
+    call apply_fixups
     add bx, 0x18
     movzx ax, word [bx]
-    add bx, ax                          ; → first INDEX_ENTRY
+    add bx, ax                          ; → first INDEX_ENTRY in this block
 
-.scan:
+.idx_scan:
     test byte [bx + 0x0C], 0x02
-    jnz .nf
+    jnz .idx_block_done                 ; end-of-block marker; next block
     cmp byte [bx + 0x50], 7
-    jne .skip
+    jne .idx_skip
     push bx
     lea si, [bx + 0x52]
     mov di, name
     mov cx, 14
     repe cmpsb
     pop bx
-    je .hit
-.skip:
+    je .idx_hit
+.idx_skip:
     add bx, [bx + 0x08]
-    jmp .scan
+    jmp .idx_scan
+
+.idx_block_done:
+    inc ebp                             ; next cluster within this run
+    pop cx                              ; restore outer counter
+    loop .idx_cluster
+
+    pop ebp                             ; restore run-start LCN for next delta
+    pop bx                              ; restore run-list pointer
+    jmp .idx_run
 
 .nf:
     mov al, 'F'
     jmp die
 
-.hit:
+.idx_hit:
+    ; BX → matched INDEX_ENTRY in BUF; stack still holds outer-counter CX
+    ; (2), run-start EBP (4), run-list BX (2). Discard before clobbering
+    ; BX/EBP via read_mft_rec.
     mov eax, [bx]
+    add sp, 8
     call read_mft_rec
 
+.load_bootmgr:
     mov bx, BUF
     mov edx, 0x80
     call find_attr
@@ -225,10 +353,38 @@ start:
     jmp die
 
 read_mft_rec:
+    ; IN: EAX = MFT record number.
+    ; Translates record → LBA via MFT_RUNS (populated at init from
+    ; $MFT's own $DATA attribute) so this works for $MFTs that span
+    ; multiple extents on disk.
     movzx ebx, word [REC_SECTORS]
+    mul ebx                             ; EAX = sector index within $MFT
+    mov si, MFT_RUNS
+.find_run:
+    mov ecx, [si + 4]                   ; length (clusters); 0 = terminator
+    test ecx, ecx
+    jz .mft_oob
+    movzx ebx, byte [0x7C00 + BPB_SecPerClus]
+    push eax
+    mov eax, ecx
+    mul ebx                             ; EAX = run length in sectors
+    mov ecx, eax
+    pop eax
+    cmp eax, ecx
+    jb .in_run
+    sub eax, ecx
+    add si, 8
+    jmp .find_run
+.in_run:
+    ; LBA = HiddSec + run.LCN * SecPerClus + (sector offset within run).
+    mov ecx, eax
+    mov eax, [si]
+    movzx ebx, byte [0x7C00 + BPB_SecPerClus]
     mul ebx
-    add eax, [MFT_LBA]
+    add eax, ecx
+    add eax, [0x7C00 + BPB_HiddSec]
     mov [READ_LBA], eax
+
     mov ax, BUF_SEG
     mov es, ax
     xor di, di
@@ -242,6 +398,46 @@ read_mft_rec:
     mov es, ax
     pop cx
     loop .lp
+    xor ax, ax
+    mov es, ax
+    mov bx, BUF
+    call apply_fixups
+    ret
+.mft_oob:
+    mov al, 'O'
+    jmp die
+
+; apply_fixups: walk the Update Sequence Array of a multi-sector NTFS
+; record (FILE or INDX) and restore the original last-2-bytes of each
+; 512-byte sector.
+;
+; IN:  BX = record offset (DS-relative), DS = 0.
+; OUT: record at [BX] has last 2 bytes of each sector replaced by the
+;      corresponding USA entry.
+; Clobbers: nothing visible (saves via pusha + ES).
+apply_fixups:
+    pusha
+    push es
+    xor ax, ax
+    mov es, ax
+    mov si, bx
+    mov ax, [bx + 4]                    ; USA offset within record
+    add si, ax                          ; SI → USA[0] (the USN)
+    mov cx, [bx + 6]                    ; USA size in words (USN + N)
+    test cx, cx
+    jz .done
+    dec cx                              ; → N fixup entries
+    jz .done
+    add si, 2                           ; → USA[1] (first fixup)
+    mov di, bx
+    add di, 510                         ; → last 2 bytes of sector 0
+.fx:
+    movsw                               ; copy USA[i] over sector-end sentinel
+    add di, 510                         ; advance to next sector-end - 2
+    loop .fx
+.done:
+    pop es
+    popa
     ret
 
 find_attr:
@@ -316,7 +512,11 @@ read_le_signed:
 
 ; Error codes:
 ;   'A' attribute missing      'I' INT 13h read failed
-;   'F' BOOTMGR not in INDX    'D' DATA was resident (unsupported)
+;   'F' BOOTMGR not in INDX    'D' BOOTMGR $DATA resident (unsupported)
+;   'M' $MFT $DATA resident    'O' MFT rec past end of run table
+mft_data_resident:
+    mov al, 'M'
+    jmp die
 die:
     mov ah, 0x0E
     mov bx, 7
