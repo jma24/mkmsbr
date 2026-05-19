@@ -10,8 +10,16 @@ the eval-first methodology is paying compounding interest. As of
 this writing, 4 of 5 variants ship at their `boot-asm/` Layer-2
 target in a single development arc.
 
-Last updated: 2026-05-19, after the byte-diff vs ms-sys eval landed
-and surfaced an LBA-12 gap in `fat32_pbr_bootmgr` (multi) on its first
+Last updated: 2026-05-19 (late), after the XP NTLDR L4 investigation
+landed the same CHS-rewrite shape that proved out for Win 7 earlier in
+the day, plus a new `build_xp_setup_chain_bootsect` primitive for the
+XP-Setup BOOTSECT.DAT chain. The XP PBR step boots on the Dell E6410
+reference rig (NTLDR menu reaches the user); the remaining downstream
+work — usbwin walking FAT for `$LDR$` and emitting a real BOOTSECT.DAT
+via the new primitive — is tracked in usbwin.
+
+Mid-day 2026-05-19 entry: the byte-diff vs ms-sys eval landed and
+surfaced an LBA-12 gap in `fat32_pbr_bootmgr` (multi) on its first
 run. Same session moved both FAT32+NTFS multi-sector stage 2 from
 LBA+1 to LBA+2 so FSInfo (FAT32) / formatter's LBA 1 (NTFS) is
 preserved verbatim instead of clobbered by stage-2 code.
@@ -34,7 +42,7 @@ Microsoft files. "L4" = real-hardware boot.
 |-----------------------------|--------------------------|------------|-----------|---------|-------------|--------|
 | `mbr_xp`                    | ✓ 373/440 vs `--mbr`     | ✓          | n/a       | —       | L1+L2       | shipped at spec target |
 | `mbr_win7`                  | ✓ 396/440 vs `--mbr7`    | ✓          | n/a       | —       | L1+L2       | shipped at spec target |
-| `fat32_pbr_ntldr`           | ✓ 398/423 vs `--fat32nt` | ✓          | ✓ 990 reads | —     | L1+L2+L3    | shipped at spec target |
+| `fat32_pbr_ntldr` (multi)   | ✓ vs `--fat32nt` s0 only | ✓          | ✓ 987 reads | ✓ PBR step boots on Dell E6410 2026-05-19 | L1+L2+L3+L4 | shipped at spec target |
 | `fat32_pbr_bootmgr` (single)| ✓ 392/423 vs `--fat32pe` | ✓          | unproven  | unproven| —           | legacy / smoke baseline |
 | `fat32_pbr_bootmgr` (multi) | ✓ ≥378/512 vs `--fat32pe` s1..15 | ✓    | ✓ 1520 reads | ✗ doesn't boot 2026-05-19 | L2+L3+L4    | L4 failing — LBA-12 gap suspected |
 | `ntfs_pbr_bootmgr` (multi)  | TODO                     | ✓ (ntfs-3g, all limitations addressed) | unproven  | —       | L2+L3       | L2 green; L1 + L3 pending |
@@ -384,37 +392,82 @@ Other candidates, ranked by current weight of evidence:
   fallback. Verified 2026-05-19 on a 2005-vintage Phoenix Award BIOS
   P4 target.
 
-- **XP boot is the big remaining target.** ms-sys's `--mbr` + `--fat32nt`
-  pipeline also fails on this hardware (different failure mode TBD).
-  The fat32_pbr_ntldr variant needs its own L4 investigation — likely
-  similar root causes (LBA-ext reject, USB-FDD emulation) plus
-  XP-specific BCD-vs-boot.ini, NTDETECT.COM placement, and
-  TXTSETUP.SIF concerns. Deferred to a dedicated session.
+- **XP NTLDR L4 — PBR step shipped 2026-05-19 (late).** The Dell E6410
+  hits the same USB-FDD-emulation trap as the 2005 Phoenix P4 (fn 0x42
+  rejected with AH=01) plus an extra wrinkle: the BIOS hands DL=0x0F
+  and rejects fn 0x08 (geometry probe) on that drive number too.
+  Diagnosed via the new stage-1 `G<AH><SPT><HEADS><DL>` output on
+  hardware (G0100000F: probe failed, drive 0x0F). Fix landed in three
+  layers:
+
+  1. **Multi-sector NTLDR PBR** (`boot-asm/fat32_pbr_ntldr/`) mirroring
+     the `fat32_pbr_bootmgr` shape. CHS reads (fn 0x02) for stage-2
+     load + every FAT-walk read. The single-sector `fat32_pbr_ntldr.asm`
+     was deleted — FAT walker + CHS + diagnostic doesn't fit in 512
+     bytes, and the legacy hardware doesn't honour fn 0x42 anyway.
+  2. **OEM ID overwrite in `splice_fat32_pbr`** (the single-sector splice
+     used by callers like BOOTSECT.DAT). Mirrors the existing
+     `splice_fat32_pbr_multi` patch — OEM "MSWIN4.1" is the gate that
+     keeps 2005-era BIOSes in USB-HDD mode rather than USB-FDD.
+  3. **Geometry-probe fallback** in stage 1: if fn 0x08 returns CF (the
+     Dell case), hardcode SPT=18, HEADS=2 (the USB-FDD profile that
+     legacy BIOSes use internally even when they refuse to report it)
+     and keep the BIOS-handed DL. Confirmed: with this fallback the
+     Dell loads NTLDR successfully.
+
+  Renames: `FAT32_PBR_NTLDR_BOOT` → `FAT32_PBR_NTLDR_MULTI_BOOT`.
+
+- **XP Setup chain — bootrec primitive shipped 2026-05-19 (late).** New
+  `build_xp_setup_chain_bootsect(formatter_sector0, target_segment,
+  runs: &[LbaRun]) -> [u8; 512]`. Builds a single-sector BOOTSECT.DAT
+  that NTLDR chainloads via boot.ini's bootsector-entry mechanism;
+  reads pre-resolved `$LDR$` LBA extents into target_segment:0 via CHS
+  and far-jumps. No FAT walker, no filename string — caller (usbwin)
+  walks FAT once + coalesces extents. Spec at
+  `docs/XP_SETUP_CHAIN_BOOTSECT_SPEC.md`. L2 smoke at
+  `tests/qemu_pbr.rs:xp_setup_chain_bootsect_chainloads_in_qemu`. usbwin
+  integration tracked in `docs/USBWIN_NTLDR_FINDINGS_2026_05_19.md`.
+
+- **XP L4 — BOOTSECT.DAT chain still pending on usbwin side.** The
+  bootrec primitive ships ready. Downstream chain (NTLDR loads
+  BOOTSECT.DAT → BOOTSECT.DAT loads `$LDR$` → text-mode setup) needs
+  usbwin to walk FAT for `$LDR$`, coalesce extents into LbaRuns, call
+  the new primitive, and write the result. Confirmed-failing state
+  today: NTLDR menu reaches the user, but selecting either Setup entry
+  trips on the classic `<Windows root>\system32\hal.dll` error because
+  BOOTSECT.DAT is missing and NTLDR falls through to its default
+  Windows-load path.
 
 - **Next session candidates:**
-  1. Wire up the operational fallback in usbwin (always invoke
-     `ms-sys --mbr7` for Win 7 mode). One-paragraph PROVENANCE update
-     explaining MBR is currently ms-sys-sourced; PBR is clean-room.
+  1. ~~Wire up the operational fallback in usbwin (always invoke
+     `ms-sys --mbr7` for Win 7 mode).~~ Landed already; usbwin now
+     uses bootrec MBR for Win 7 + XP and ms-sys MBR fallback was
+     deemed unnecessary once bootrec's MBR byte-matching was tried.
   2. `mbr_win7_with_signature(disk_sectors, sig: u32)` API in
      `src/mbr.rs`, replacing the hardcoded 0xDEADBEEF test value.
      usbwin generates a per-USB random signature and threads it
      through. Needed for Windows BCD downstream regardless of BIOS
      mode-detection behavior.
-  3. **XP / NTLDR L4 investigation** — separate failure mode, expects
-     its own debugging arc. Likely overlap with CHS read work
-     already done for fat32_pbr_bootmgr.
-  4. NTFS L3 fixture against the real Win 7 image — exercises USA
+  3. ~~XP / NTLDR L4 investigation~~ — shipped 2026-05-19 (late). PBR
+     step boots; BOOTSECT.DAT chain is the remaining link, tracked on
+     the usbwin side.
+  4. **usbwin integration of `build_xp_setup_chain_bootsect`**: walk
+     FAT for `$LDR$` extents, coalesce runs (≤16), call the new
+     primitive, write the result to `$WIN_NT$.~BT\BOOTSECT.DAT`. The
+     existing `crates/usbwin/src/pipeline/fat32.rs` walker is the
+     starting point; only the run-coalescer + glue is new.
+  5. NTFS L3 fixture against the real Win 7 image — exercises USA
      fixups / multi-block scan / extent chasing / INDEX_ROOT inline
      against real Microsoft-formatted bytes for the first time.
-  5. NTFS L1 ms-sys `--ntfs` oracle (last informational gap in the
+  6. NTFS L1 ms-sys `--ntfs` oracle (last informational gap in the
      variant matrix).
-  6. CHS-only QEMU test variant (boot via `-drive if=floppy` so
+  7. CHS-only QEMU test variant (boot via `-drive if=floppy` so
      SeaBIOS rejects fn 0x42 — closes the test-coverage gap that let
      the LBA-ext deviation slip past QEMU until L4 caught it).
-  7. Full clean-room MBR rewrite for v1.0 / v1.1, mirroring ms-sys's
+  8. Full clean-room MBR rewrite for v1.0 / v1.1, mirroring ms-sys's
      structure where defensible. Argue in PROVENANCE that the
      resulting byte-similarity is a property of the constrained task,
      not derivation.
-  8. CI / packaging push (GitHub Actions workflow, `src/bin/bootrec.rs`,
+  9. CI / packaging push (GitHub Actions workflow, `src/bin/bootrec.rs`,
      README install section, crates.io reservation) — none of which
      individually need bootrec internals knowledge.

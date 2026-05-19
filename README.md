@@ -31,12 +31,20 @@ the boot code. A variant ships when its eval passes. See
 bootrec::mbr_win7(geometry, partitions) -> [u8; 512];
 bootrec::mbr_xp(geometry, partitions)   -> [u8; 512];
 
-// FAT32 Partition Boot Records.
-bootrec::fat32_pbr_ntldr(bpb)   -> [u8; 512];
-bootrec::fat32_pbr_bootmgr(bpb) -> PbrBytes;   // multi-sector
+// FAT32 Partition Boot Records (multi-sector). Both use CHS reads
+// for compatibility with USB-FDD-emulating BIOSes; the single-sector
+// fat32_pbr_bootmgr variant ships only as a smoke-test baseline.
+bootrec::fat32_pbr_ntldr(bpb)   -> PbrBytes;   // 3 sectors (XP/2003)
+bootrec::fat32_pbr_bootmgr(bpb) -> PbrBytes;   // 3 sectors (Win 7+)
 
-// NTFS Partition Boot Records.
+// NTFS Partition Boot Record (multi-sector).
 bootrec::ntfs_pbr_bootmgr(bpb)  -> PbrBytes;
+
+// XP-Setup BOOTSECT.DAT chain loader. Single sector that NTLDR
+// chainloads to load $LDR$ from pre-resolved LBA runs.
+bootrec::build_xp_setup_chain_bootsect(
+    formatter_sector0, target_segment, runs,
+) -> [u8; 512];
 ```
 
 A CLI binary will mirror `ms-sys`'s flag names where the mapping is obvious
@@ -47,20 +55,32 @@ shell recipes can switch with a one-line change.
 
 What works now:
 
-- `splice_fat32_pbr` — the BPB-preserving splice (the single most important
-  primitive; see `src/pbr.rs`).
+- `splice_fat32_pbr` (single-sector) and `splice_fat32_pbr_multi`
+  (multi-sector) — the BPB-preserving splices that are the single most
+  important primitive (see `src/pbr.rs`). Both overwrite OEM ID with
+  `"MSWIN4.1"` so 2000s-era BIOSes route the stick through USB-HDD
+  emulation rather than USB-FDD.
+- `splice_ntfs_pbr_multi` — same shape for NTFS.
 - `build_mbr` + `PartitionEntry` — single-FAT32-active MBR layout.
-- NASM sources for `mbr_xp.asm`, `mbr_win7.asm`, `fat32_pbr_ntldr.asm`,
-  `fat32_pbr_bootmgr/` (multi-sector), and `ntfs_pbr_bootmgr/`
-  (multi-sector), plus a `fake_bootmgr.asm` stub for the QEMU smoke
-  tests.
+- `build_xp_setup_chain_bootsect(formatter_sector0, target_segment,
+  runs)` — XP-Setup `BOOTSECT.DAT` loader (see `src/pbr.rs`). Caller
+  pre-resolves `$LDR$` LBA runs; we emit a CHS-reading bootsector.
+- NASM sources for `mbr_xp.asm`, `mbr_win7.asm`, `fat32_pbr_bootmgr/`,
+  `fat32_pbr_ntldr/` (both multi-sector), `ntfs_pbr_bootmgr/`, and
+  `xp_setup_chain_bootsect.asm`, plus a `fake_bootmgr.asm` stub for
+  the QEMU smoke tests.
 - QEMU smoke test harnesses that boot synthetic FAT32 + NTFS images
   through our PBRs and assert the chain-load worked
-  (`tests/qemu_pbr.rs`, `tests/qemu_ntfs_pbr.rs`).
+  (`tests/qemu_pbr.rs`, `tests/qemu_ntfs_pbr.rs`,
+  `tests/qemu_pbr_real.rs` for real Microsoft loaders).
+- Layer-4 (real hardware): Win 7 and XP NTLDR both reach the loader
+  step on the Dell Latitude E6410 reference rig (2005-vintage Phoenix
+  Award P4 also works for Win 7). XP Setup phase needs the
+  BOOTSECT.DAT chain to be wired up on the usbwin side (see
+  `docs/USBWIN_NTLDR_FINDINGS_2026_05_19.md`).
 
 Doesn't work yet:
 
-- Layer-4 (real-hardware boot) — only the user can run that pipeline
 - L3 (real Win 7 NTFS install) against the `ntfs_pbr_bootmgr` variant
   — code complete (USA fixups, $INDEX_ALLOCATION B+tree handling, $MFT
   extent chasing, $INDEX_ROOT inline scan all landed 2026-05-18); just
