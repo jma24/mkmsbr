@@ -11,6 +11,9 @@ pub enum PbrError {
     #[error("boot blob is {got} bytes; expected exactly 512")]
     BadBlobSize { got: usize },
 
+    #[error("multi-sector blob is {got} bytes; expected non-zero multiple of 512")]
+    BadMultiBlobSize { got: usize },
+
     #[error("boot blobs were not embedded; rebuild with --features embed-boot-asm")]
     NotEmbedded,
 }
@@ -42,6 +45,44 @@ pub fn splice_fat32_pbr(existing: &[u8], boot: &[u8]) -> Result<[u8; 512], PbrEr
     out[90..510].copy_from_slice(&boot[90..510]);
     out[510] = 0x55;
     out[511] = 0xAA;
+    Ok(out)
+}
+
+/// Multi-sector variant of [`splice_fat32_pbr`]. Given:
+///   - `existing`: the freshly-formatted sector 0 (512 bytes, BPB at 3..90)
+///   - `blob`: the multi-sector boot code (N × 512 bytes, N ≥ 2). The
+///     first 512 bytes are stage 1 (with a BPB placeholder); bytes 512..
+///     are continuation sectors (raw, no BPB).
+///
+/// Returns a `Vec<u8>` of length `blob.len()`:
+///   bytes      0..3    = blob[0..3]       (jump from stage 1)
+///   bytes      3..90   = existing[3..90]  (BPB - preserved)
+///   bytes     90..510  = blob[90..510]    (stage 1 boot code)
+///   bytes    510..512  = [0x55, 0xAA]     (signature)
+///   bytes    512..end  = blob[512..]      (sectors 1+ verbatim)
+///
+/// The caller writes the result starting at sector 0 of the partition;
+/// sectors 1+ land at LBAs partition_start + 1, +2, etc.
+pub fn splice_fat32_pbr_multi(existing: &[u8], blob: &[u8]) -> Result<Vec<u8>, PbrError> {
+    if existing.len() != 512 {
+        return Err(PbrError::BadExistingSize { got: existing.len() });
+    }
+    if blob.is_empty() {
+        return Err(PbrError::NotEmbedded);
+    }
+    if blob.len() < 1024 || blob.len() % 512 != 0 {
+        return Err(PbrError::BadMultiBlobSize { got: blob.len() });
+    }
+
+    let mut out = vec![0u8; blob.len()];
+    // Sector 0 — same splice as single-sector.
+    out[0..3].copy_from_slice(&blob[0..3]);
+    out[3..90].copy_from_slice(&existing[3..90]);
+    out[90..510].copy_from_slice(&blob[90..510]);
+    out[510] = 0x55;
+    out[511] = 0xAA;
+    // Sectors 1+ — verbatim.
+    out[512..].copy_from_slice(&blob[512..]);
     Ok(out)
 }
 
@@ -91,5 +132,43 @@ mod tests {
             Err(PbrError::NotEmbedded) => {}
             other => panic!("expected NotEmbedded, got {other:?}"),
         }
+    }
+
+    fn fake_multi_blob() -> Vec<u8> {
+        let mut b = vec![0u8; 1024];
+        b[0] = 0xEB;
+        b[1] = 0x58;
+        b[2] = 0x90;
+        for i in 90..510 {
+            b[i] = 0xCC;
+        }
+        // sector 1: distinctive filler so we can assert it carried through.
+        for i in 512..1024 {
+            b[i] = 0xAB;
+        }
+        b
+    }
+
+    #[test]
+    fn multi_splice_preserves_bpb_and_carries_continuation_sectors() {
+        let out = splice_fat32_pbr_multi(&fake_existing(), &fake_multi_blob()).unwrap();
+        assert_eq!(out.len(), 1024);
+        assert_eq!(&out[0..3], &[0xEB, 0x58, 0x90]);
+        assert!(out[3..90].iter().all(|&b| b == 0xBB), "BPB preserved");
+        assert!(out[90..510].iter().all(|&b| b == 0xCC), "stage 1 boot code");
+        assert_eq!(&out[510..512], &[0x55, 0xAA]);
+        assert!(out[512..1024].iter().all(|&b| b == 0xAB), "stage 2 carried through");
+    }
+
+    #[test]
+    fn multi_splice_rejects_bad_sizes() {
+        assert!(matches!(
+            splice_fat32_pbr_multi(&fake_existing(), &vec![0u8; 512]),
+            Err(PbrError::BadMultiBlobSize { got: 512 })
+        ));
+        assert!(matches!(
+            splice_fat32_pbr_multi(&fake_existing(), &vec![0u8; 1500]),
+            Err(PbrError::BadMultiBlobSize { got: 1500 })
+        ));
     }
 }

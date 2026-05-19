@@ -40,6 +40,16 @@ fn fat32_pbr_ntldr_chainloads_in_qemu() {
     assert_chainload(bootrec::FAT32_PBR_NTLDR_BOOT, "NTLDR", "ntldr");
 }
 
+#[test]
+#[ignore]
+fn fat32_pbr_bootmgr_multi_chainloads_in_qemu() {
+    assert_multi_chainload(
+        bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT,
+        "BOOTMGR",
+        "bootmgr_multi",
+    );
+}
+
 fn assert_chainload(blob: &[u8], target_filename: &str, variant: &str) {
     if let Err(reason) = check_dependencies() {
         eprintln!("skipping qemu test ({variant}): {reason}");
@@ -60,6 +70,39 @@ fn assert_chainload(blob: &[u8], target_filename: &str, variant: &str) {
     let image = tmp.join(format!("bootrec-pbr-{variant}.img"));
     create_fat32_image(&image, &fake_loader, target_filename).expect("creating FAT32 image");
     splice_our_pbr(&image, blob).expect("splicing PBR");
+
+    let serial = boot_under_qemu(&image).expect("running qemu");
+    assert!(
+        serial.contains("BOOTREC OK"),
+        "[{variant}] qemu serial missing 'BOOTREC OK'. Got:\n---\n{serial}\n---"
+    );
+}
+
+fn assert_multi_chainload(blob: &[u8], target_filename: &str, variant: &str) {
+    if let Err(reason) = check_dependencies() {
+        eprintln!("skipping qemu test ({variant}): {reason}");
+        return;
+    }
+
+    if blob.is_empty() {
+        panic!(
+            "[{variant}] PBR blob is empty (built without --features embed-boot-asm). \
+             Re-run: cargo test --test qemu_pbr --features embed-boot-asm -- --ignored"
+        );
+    }
+    assert!(
+        blob.len() >= 1024 && blob.len() % 512 == 0,
+        "[{variant}] multi blob is {} bytes; expected non-zero multiple of 512",
+        blob.len()
+    );
+
+    let boot_asm = repo_root().join("boot-asm");
+    let fake_loader = build_fake_loader(&boot_asm).expect("building fake_bootmgr.bin");
+
+    let tmp = tempdir();
+    let image = tmp.join(format!("bootrec-pbr-{variant}.img"));
+    create_fat32_image(&image, &fake_loader, target_filename).expect("creating FAT32 image");
+    splice_our_multi_pbr(&image, blob).expect("splicing multi-sector PBR");
 
     let serial = boot_under_qemu(&image).expect("running qemu");
     assert!(
@@ -159,6 +202,27 @@ fn splice_our_pbr(image: &Path, blob: &[u8]) -> Result<(), String> {
         .map_err(|e| format!("seek: {e}"))?;
     file.write_all(&spliced)
         .map_err(|e| format!("writing spliced PBR: {e}"))?;
+    Ok(())
+}
+
+fn splice_our_multi_pbr(image: &Path, blob: &[u8]) -> Result<(), String> {
+    use std::fs::OpenOptions;
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(image)
+        .map_err(|e| format!("opening image for splice: {e}"))?;
+    let mut existing = [0u8; 512];
+    file.read_exact(&mut existing)
+        .map_err(|e| format!("reading existing PBR: {e}"))?;
+    let spliced = bootrec::splice_fat32_pbr_multi(&existing, blob)
+        .map_err(|e| format!("splice_fat32_pbr_multi: {e}"))?;
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| format!("seek: {e}"))?;
+    file.write_all(&spliced)
+        .map_err(|e| format!("writing spliced multi-sector PBR: {e}"))?;
     Ok(())
 }
 

@@ -16,8 +16,20 @@ pub const MBR_WIN7_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mbr_w
 /// FAT32 PBR boot code for the BOOTMGR-loading variant (Win 7/8/10/11
 /// install media). 512 bytes, single-sector. Caller splices this through
 /// [`crate::splice_fat32_pbr`] so the partition's actual BPB is preserved.
+///
+/// **Limitation:** the single-sector variant boots fake bootmgrs in QEMU
+/// fine but does not satisfy real Microsoft BOOTMGR's multi-sector boot
+/// environment contract on real hardware. For production install media
+/// use [`FAT32_PBR_BOOTMGR_MULTI_BOOT`].
 pub const FAT32_PBR_BOOTMGR_BOOT: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/fat32_pbr_bootmgr.bin"));
+
+/// FAT32 PBR boot code, multi-sector BOOTMGR variant. 1024 bytes
+/// (sector 0 stage-1 + sector 1 stage-2). Caller splices through
+/// [`crate::splice_fat32_pbr_multi`]. This is the v1.0 production
+/// variant; see `boot-asm/fat32_pbr_bootmgr/` for the per-sector NASM.
+pub const FAT32_PBR_BOOTMGR_MULTI_BOOT: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/fat32_pbr_bootmgr_multi.bin"));
 
 /// FAT32 PBR boot code for the NTLDR-loading variant (Win 2000/XP/2003).
 /// 512 bytes, single-sector.

@@ -12,9 +12,10 @@ pub mod mbr;
 pub mod pbr;
 
 pub use blobs::{
-    FAT32_PBR_BOOTMGR_BOOT, FAT32_PBR_NTLDR_BOOT, MBR_WIN7_BOOT, MBR_XP_BOOT, NTFS_PBR_BOOT,
+    FAT32_PBR_BOOTMGR_BOOT, FAT32_PBR_BOOTMGR_MULTI_BOOT, FAT32_PBR_NTLDR_BOOT, MBR_WIN7_BOOT,
+    MBR_XP_BOOT, NTFS_PBR_BOOT,
 };
 pub use mbr::{
     build_mbr, mbr_win7, mbr_xp, MbrError, PartitionEntry, PartitionType, PARTITION_START_LBA,
 };
-pub use pbr::splice_fat32_pbr;
+pub use pbr::{splice_fat32_pbr, splice_fat32_pbr_multi};
