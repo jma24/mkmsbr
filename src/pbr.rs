@@ -21,7 +21,146 @@ pub enum PbrError {
 
     #[error("boot blobs were not embedded; rebuild with --features embed-boot-asm")]
     NotEmbedded,
+
+    #[error("run list is empty; need at least one LbaRun")]
+    EmptyRuns,
+
+    #[error("run list has {got} entries; bootsect template caps at {max}")]
+    TooManyRuns { got: usize, max: usize },
+
+    #[error(
+        "total sector count {got} exceeds bootsect cap of {max} \
+         (≈{} KB at 512 B/sector)",
+        max * 512 / 1024
+    )]
+    TooManySectors { got: usize, max: usize },
+
+    #[error("formatter sector 0 missing 0xAA55 boot signature at offset 510")]
+    MissingBootSignature,
+
+    #[error(
+        "target segment {got:#06x} out of sane range [{min:#06x}, {max:#06x}] \
+         (too low: overlaps IVT/BDA; too high: wraps real-mode address space)"
+    )]
+    BadTargetSegment { got: u16, min: u16, max: u16 },
 }
+
+/// One contiguous range of sectors on disk, in partition-relative LBA
+/// coordinates (the natural output of a FAT walk). The bootsector code
+/// adds `BPB.HiddSec` at runtime to get the absolute disk LBA before
+/// issuing INT 13h reads.
+///
+/// Used by [`build_xp_setup_chain_bootsect`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LbaRun {
+    /// Partition-relative starting LBA.
+    pub start_lba: u32,
+    /// Number of consecutive sectors in this run. Must be > 0.
+    pub sector_count: u16,
+}
+
+/// Build the 512-byte BOOTSECT.DAT that NTLDR chainloads via
+/// `boot.ini`'s bootsector-entry mechanism during XP Setup. The emitted
+/// sector reads the runs into `target_segment:0` via CHS and far-jumps
+/// there — typically into `$LDR$` (setupldr.bin renamed) at 0x2000:0.
+///
+/// `formatter_sector0` is the partition's existing sector 0; the BPB at
+/// bytes 3..90 is preserved (only `BPB.HiddSec` at offset 0x1C is read
+/// at runtime, but preserving the full BPB keeps the result valid to FS
+/// drivers that inspect it).
+///
+/// `target_segment` is where the loaded payload starts executing. The
+/// canonical XP Setup value is 0x2000 (setupldr's expected load
+/// address). Sane range is [0x0050, 0x9000] — below 0x0050 collides
+/// with the IVT/BDA, above 0x9000 starts to wrap the real-mode address
+/// space depending on payload size.
+///
+/// `runs` is the list of LBA extents to read, partition-relative,
+/// pre-coalesced. The caller (usbwin's FAT walker) collapses adjacent
+/// LBAs into runs so an unfragmented 260 KB `$LDR$` fits in 1–3 runs
+/// rather than 520 separate entries.
+///
+/// Errors: empty `runs`, more than [`MAX_SETUP_CHAIN_RUNS`] runs,
+/// total sectors > [`MAX_SETUP_CHAIN_SECTORS`], missing boot
+/// signature, or target segment out of range.
+pub fn build_xp_setup_chain_bootsect(
+    formatter_sector0: &[u8; 512],
+    target_segment: u16,
+    runs: &[LbaRun],
+) -> Result<[u8; 512], PbrError> {
+    // Template-blob check first so a misbuilt crate fails before input
+    // validation (which would mask the real cause).
+    let template = crate::blobs::XP_SETUP_CHAIN_BOOTSECT_BOOT;
+    if template.is_empty() {
+        return Err(PbrError::NotEmbedded);
+    }
+
+    if runs.is_empty() {
+        return Err(PbrError::EmptyRuns);
+    }
+    if runs.len() > MAX_SETUP_CHAIN_RUNS {
+        return Err(PbrError::TooManyRuns {
+            got: runs.len(),
+            max: MAX_SETUP_CHAIN_RUNS,
+        });
+    }
+    let total_sectors: usize = runs.iter().map(|r| r.sector_count as usize).sum();
+    if total_sectors > MAX_SETUP_CHAIN_SECTORS {
+        return Err(PbrError::TooManySectors {
+            got: total_sectors,
+            max: MAX_SETUP_CHAIN_SECTORS,
+        });
+    }
+    if formatter_sector0[510] != 0x55 || formatter_sector0[511] != 0xAA {
+        return Err(PbrError::MissingBootSignature);
+    }
+    const MIN_TARGET_SEG: u16 = 0x0050;
+    const MAX_TARGET_SEG: u16 = 0x9000;
+    if target_segment < MIN_TARGET_SEG || target_segment > MAX_TARGET_SEG {
+        return Err(PbrError::BadTargetSegment {
+            got: target_segment,
+            min: MIN_TARGET_SEG,
+            max: MAX_TARGET_SEG,
+        });
+    }
+
+    let mut out = [0u8; 512];
+    // Splice: same shape as splice_fat32_pbr — jmp + BPB + boot code +
+    // signature. The patchable area lives inside the [90..510] boot-code
+    // window so it comes through verbatim from the template; we then
+    // overwrite the placeholders below.
+    out[0..3].copy_from_slice(&template[0..3]);
+    out[3..90].copy_from_slice(&formatter_sector0[3..90]);
+    out[90..510].copy_from_slice(&template[90..510]);
+    out[510] = 0x55;
+    out[511] = 0xAA;
+
+    // Patchable region offsets (see boot-asm/xp_setup_chain_bootsect.asm
+    // header comment). target_jmp_addr lives at 0x180 with offset=0,
+    // segment immediately after.
+    const TARGET_SEG_OFFSET: usize = 0x182;
+    const RUN_COUNT_OFFSET: usize = 0x184;
+    const RUN_TABLE_OFFSET: usize = 0x185;
+
+    out[TARGET_SEG_OFFSET..TARGET_SEG_OFFSET + 2]
+        .copy_from_slice(&target_segment.to_le_bytes());
+    out[RUN_COUNT_OFFSET] = runs.len() as u8;
+    for (i, run) in runs.iter().enumerate() {
+        let off = RUN_TABLE_OFFSET + i * 6;
+        out[off..off + 4].copy_from_slice(&run.start_lba.to_le_bytes());
+        out[off + 4..off + 6].copy_from_slice(&run.sector_count.to_le_bytes());
+    }
+    Ok(out)
+}
+
+/// Maximum number of LbaRuns that fit in the BOOTSECT.DAT template.
+/// The patchable run table is 96 bytes at 6 bytes per entry → 16 runs.
+pub const MAX_SETUP_CHAIN_RUNS: usize = 16;
+
+/// Maximum total sectors the BOOTSECT.DAT loader will read. 1024 sectors
+/// = 512 KB, comfortably above the ~260 KB needed for $LDR$/setupldr.bin
+/// and well within a single real-mode segment range (0x2000..0xB000).
+pub const MAX_SETUP_CHAIN_SECTORS: usize = 1024;
 
 /// Splice the FAT32 PBR. Given:
 ///   - `existing`: the 512-byte sector currently at /dev/rdiskNs1 offset 0,
@@ -163,6 +302,120 @@ pub fn splice_ntfs_pbr_multi(existing: &[u8], blob: &[u8]) -> Result<Vec<u8>, Pb
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn synthetic_formatter_sector0() -> [u8; 512] {
+        // Minimal valid FAT32 boot sector for the setup-chain tests.
+        // We only care about the jump, OEM/BPB area being copyable, and
+        // the boot signature; the loader code area gets overwritten.
+        let mut s = [0u8; 512];
+        s[0..3].copy_from_slice(&[0xEB, 0x58, 0x90]);
+        s[3..11].copy_from_slice(b"BSD  4.4");
+        // Set a non-zero HiddSec so we can verify the bootsect's runtime
+        // would add it (caller doesn't have to compute absolute LBAs).
+        s[0x1C..0x20].copy_from_slice(&2048u32.to_le_bytes());
+        s[510] = 0x55;
+        s[511] = 0xAA;
+        s
+    }
+
+    fn one_run(start: u32, count: u16) -> Vec<LbaRun> {
+        vec![LbaRun {
+            start_lba: start,
+            sector_count: count,
+        }]
+    }
+
+    #[test]
+    fn setup_chain_emits_512_bytes_with_signature() {
+        let s0 = synthetic_formatter_sector0();
+        let out = build_xp_setup_chain_bootsect(&s0, 0x2000, &one_run(1000, 128)).unwrap();
+        assert_eq!(out.len(), 512);
+        assert_eq!(&out[510..512], &[0x55, 0xAA]);
+        // BPB preserved (bytes 3..90 from formatter).
+        assert_eq!(&out[3..90], &s0[3..90]);
+    }
+
+    #[test]
+    fn setup_chain_patches_target_segment_and_run_table() {
+        let s0 = synthetic_formatter_sector0();
+        let runs = vec![
+            LbaRun { start_lba: 1000, sector_count: 64 },
+            LbaRun { start_lba: 1100, sector_count: 32 },
+        ];
+        let out = build_xp_setup_chain_bootsect(&s0, 0x2500, &runs).unwrap();
+
+        // target_jmp_addr offset at 0x180 stays 0 (offset within target seg).
+        assert_eq!(u16::from_le_bytes([out[0x180], out[0x181]]), 0);
+        // target_jmp_addr segment at 0x182 = the patched target_segment.
+        assert_eq!(u16::from_le_bytes([out[0x182], out[0x183]]), 0x2500);
+        // run_count at 0x184.
+        assert_eq!(out[0x184], 2);
+        // run_table at 0x185: two 6-byte entries.
+        assert_eq!(u32::from_le_bytes(out[0x185..0x189].try_into().unwrap()), 1000);
+        assert_eq!(u16::from_le_bytes([out[0x189], out[0x18A]]), 64);
+        assert_eq!(u32::from_le_bytes(out[0x18B..0x18F].try_into().unwrap()), 1100);
+        assert_eq!(u16::from_le_bytes([out[0x18F], out[0x190]]), 32);
+        // Subsequent entry slot remains zeroed.
+        assert!(out[0x191..0x191 + 6].iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn setup_chain_rejects_empty_runs() {
+        let s0 = synthetic_formatter_sector0();
+        let err = build_xp_setup_chain_bootsect(&s0, 0x2000, &[]).unwrap_err();
+        assert!(matches!(err, PbrError::EmptyRuns), "got {err:?}");
+    }
+
+    #[test]
+    fn setup_chain_rejects_too_many_runs() {
+        let s0 = synthetic_formatter_sector0();
+        let many: Vec<LbaRun> = (0..(MAX_SETUP_CHAIN_RUNS + 1) as u32)
+            .map(|i| LbaRun { start_lba: i * 100, sector_count: 1 })
+            .collect();
+        let err = build_xp_setup_chain_bootsect(&s0, 0x2000, &many).unwrap_err();
+        assert!(matches!(err, PbrError::TooManyRuns { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn setup_chain_rejects_too_many_sectors() {
+        let s0 = synthetic_formatter_sector0();
+        let runs = vec![LbaRun {
+            start_lba: 0,
+            sector_count: (MAX_SETUP_CHAIN_SECTORS + 1) as u16,
+        }];
+        let err = build_xp_setup_chain_bootsect(&s0, 0x2000, &runs).unwrap_err();
+        assert!(matches!(err, PbrError::TooManySectors { .. }), "got {err:?}");
+    }
+
+    #[test]
+    fn setup_chain_rejects_missing_boot_signature() {
+        let mut s0 = synthetic_formatter_sector0();
+        s0[510] = 0;
+        let err = build_xp_setup_chain_bootsect(&s0, 0x2000, &one_run(1000, 1)).unwrap_err();
+        assert!(matches!(err, PbrError::MissingBootSignature), "got {err:?}");
+    }
+
+    #[test]
+    fn setup_chain_rejects_target_segment_out_of_range() {
+        let s0 = synthetic_formatter_sector0();
+        for bad in [0x0000u16, 0x0049, 0x9001, 0xFFFF] {
+            let err = build_xp_setup_chain_bootsect(&s0, bad, &one_run(1000, 1)).unwrap_err();
+            assert!(
+                matches!(err, PbrError::BadTargetSegment { .. }),
+                "seg {bad:#06x} → {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn setup_chain_accepts_max_runs_at_cap() {
+        let s0 = synthetic_formatter_sector0();
+        let runs: Vec<LbaRun> = (0..MAX_SETUP_CHAIN_RUNS as u32)
+            .map(|i| LbaRun { start_lba: i * 100, sector_count: 1 })
+            .collect();
+        let out = build_xp_setup_chain_bootsect(&s0, 0x2000, &runs).unwrap();
+        assert_eq!(out[0x184], MAX_SETUP_CHAIN_RUNS as u8);
+    }
 
     fn fake_blob() -> Vec<u8> {
         let mut b = vec![0u8; 512];

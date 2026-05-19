@@ -52,6 +52,15 @@ pub const FAT32_PBR_NTLDR_MULTI_BOOT: &[u8] =
 pub const NTFS_PBR_BOOTMGR_MULTI_BOOT: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/ntfs_pbr_bootmgr_multi.bin"));
 
+/// Single-sector loader template for XP Setup's BOOTSECT.DAT slot. Built
+/// at runtime by [`crate::build_xp_setup_chain_bootsect`]: the patcher
+/// splices the partition's BPB into bytes 3..90 and fills the run-table
+/// + target-segment placeholders at offsets 0x180..0x1E5. Pre-patch the
+/// blob is non-functional (run_count = 0); always go through the
+/// builder.
+pub const XP_SETUP_CHAIN_BOOTSECT_BOOT: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/xp_setup_chain_bootsect.bin"));
+
 /// Returns `true` if the boot blobs were embedded at build time.
 pub fn embedded() -> bool {
     !MBR_XP_BOOT.is_empty()

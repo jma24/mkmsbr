@@ -54,6 +54,126 @@ fn fat32_pbr_bootmgr_multi_chainloads_in_qemu() {
     );
 }
 
+/// L2 smoke for `build_xp_setup_chain_bootsect`. Unlike the PBR tests
+/// above (which boot from a FAT32 partition's spliced PBR and walk FAT
+/// to find a file), this exercises the raw-LBA loader directly:
+///
+///   1. Format a 16 MiB FAT32 image.
+///   2. Write the fake_bootmgr.bin payload to a known partition-relative
+///      LBA via `dd` (bypassing FAT entirely — we're testing the loader
+///      not the filesystem).
+///   3. Read sector 0 to capture the formatter's BPB.
+///   4. Call `build_xp_setup_chain_bootsect` with a single LbaRun
+///      pointing at that LBA, target_segment = 0x2000.
+///   5. Overwrite LBA 0 with the resulting bootsector (BPB preserved by
+///      the splice; the formatter's PBR code is replaced).
+///   6. Boot the image under qemu-system-i386.
+///   7. Pass if serial contains "BOOTREC OK" — the same marker the
+///      fake_bootmgr.bin payload prints.
+///
+/// HiddSec is 0 on a bare partition image (no MBR), so the bootsector's
+/// "add HiddSec to start_lba" math reduces to a no-op; the test still
+/// exercises the run-loop + CHS path. A separate test could add an MBR
+/// to verify HiddSec is honored, but that's overhead the value of the
+/// L4 hardware test will cover.
+#[test]
+#[ignore]
+fn xp_setup_chain_bootsect_chainloads_in_qemu() {
+    if let Err(reason) = check_dependencies() {
+        eprintln!("skipping setup-chain test: {reason}");
+        return;
+    }
+    if bootrec::XP_SETUP_CHAIN_BOOTSECT_BOOT.is_empty() {
+        panic!(
+            "XP_SETUP_CHAIN_BOOTSECT_BOOT empty (built without --features embed-boot-asm). \
+             Re-run: cargo test --test qemu_pbr --features embed-boot-asm -- --ignored"
+        );
+    }
+
+    const PAYLOAD_LBA: u32 = 2000; // safely past reserved + FAT region of a 16 MiB FAT32
+
+    let boot_asm = repo_root().join("boot-asm");
+    let fake_loader = build_fake_loader(&boot_asm).expect("building fake_bootmgr.bin");
+    // fake_bootmgr.bin assembles to ~40 bytes (the actual code + msg + halt).
+    // The PBR tests get away with the short size because they mcopy it into
+    // FAT and the FAT reader pads with zeros on the last cluster. For raw
+    // LBA placement we have to pad ourselves so the sector-aligned write
+    // covers a full 512 bytes.
+    let mut payload = std::fs::read(&fake_loader).expect("reading fake_bootmgr.bin");
+    assert!(payload.len() <= 512, "fake loader fits in one sector");
+    payload.resize(512, 0);
+
+    let tmp = tempdir();
+    let image = tmp.join("bootrec-setup-chain.img");
+    create_fat32_image_only(&image).expect("creating FAT32 image");
+
+    // Write payload at the known LBA via raw I/O (skips FAT).
+    write_at_lba(&image, PAYLOAD_LBA, &payload).expect("writing payload at LBA");
+
+    // Read sector 0 to capture the formatter's BPB.
+    let mut formatter_sector0 = [0u8; 512];
+    read_at_lba(&image, 0, &mut formatter_sector0).expect("reading sector 0");
+
+    let runs = [bootrec::LbaRun {
+        start_lba: PAYLOAD_LBA,
+        sector_count: 1,
+    }];
+    let bootsect = bootrec::build_xp_setup_chain_bootsect(&formatter_sector0, 0x2000, &runs)
+        .expect("build_xp_setup_chain_bootsect");
+
+    write_at_lba(&image, 0, &bootsect).expect("writing bootsect at LBA 0");
+
+    let serial = boot_under_qemu(&image).expect("running qemu");
+    assert!(
+        serial.contains("BOOTREC OK"),
+        "[setup-chain] qemu serial missing 'BOOTREC OK'. Got:\n---\n{serial}\n---"
+    );
+}
+
+/// Like create_fat32_image but factored to be reusable across tests that
+/// don't need an mcopied payload — they place bytes via raw I/O instead.
+fn create_fat32_image_only(image: &Path) -> Result<(), String> {
+    let f = std::fs::File::create(image).map_err(|e| format!("create image: {e}"))?;
+    f.set_len(16 * 1024 * 1024).map_err(|e| format!("set_len: {e}"))?;
+    drop(f);
+    let fmt = Command::new("mformat")
+        .args(["-F", "-i"])
+        .arg(image)
+        .args(["-v", "BOOTREC", "::"])
+        .output()
+        .map_err(|e| format!("mformat: {e}"))?;
+    if !fmt.status.success() {
+        return Err(format!("mformat failed: {}", String::from_utf8_lossy(&fmt.stderr)));
+    }
+    Ok(())
+}
+
+fn write_at_lba(image: &Path, lba: u32, bytes: &[u8]) -> Result<(), String> {
+    use std::fs::OpenOptions;
+    use std::io::{Seek, SeekFrom, Write};
+    let mut f = OpenOptions::new()
+        .write(true)
+        .open(image)
+        .map_err(|e| format!("open for write: {e}"))?;
+    f.seek(SeekFrom::Start(lba as u64 * 512))
+        .map_err(|e| format!("seek: {e}"))?;
+    f.write_all(bytes).map_err(|e| format!("write: {e}"))?;
+    Ok(())
+}
+
+fn read_at_lba(image: &Path, lba: u32, buf: &mut [u8]) -> Result<(), String> {
+    use std::fs::OpenOptions;
+    use std::io::{Read, Seek, SeekFrom};
+    let mut f = OpenOptions::new()
+        .read(true)
+        .open(image)
+        .map_err(|e| format!("open for read: {e}"))?;
+    f.seek(SeekFrom::Start(lba as u64 * 512))
+        .map_err(|e| format!("seek: {e}"))?;
+    f.read_exact(buf).map_err(|e| format!("read: {e}"))?;
+    Ok(())
+}
+
 fn assert_chainload(blob: &[u8], target_filename: &str, variant: &str) {
     if let Err(reason) = check_dependencies() {
         eprintln!("skipping qemu test ({variant}): {reason}");
