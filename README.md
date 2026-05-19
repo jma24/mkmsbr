@@ -62,8 +62,9 @@ Doesn't work yet:
 
 - Layer-4 (real-hardware boot) — only the user can run that pipeline
 - L3 (real Win 7 NTFS install) against the `ntfs_pbr_bootmgr` variant
-  — INDEX_ALLOCATION B+tree descent + USA fixups + $MFT extent walking
-  required first (see `docs/BACKLOG.md`)
+  — code complete (USA fixups, $INDEX_ALLOCATION B+tree handling, $MFT
+  extent chasing, $INDEX_ROOT inline scan all landed 2026-05-18); just
+  waiting on a real NTFS image for the actual L3 run
 - A proper CLI binary (library + tests only for now)
 - Anything in `docs/SPEC.md` §Component breakdown beyond initial sketches
 
