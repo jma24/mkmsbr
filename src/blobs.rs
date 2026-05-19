@@ -8,6 +8,11 @@
 /// 0000:7C00; finds the active primary partition and chain-loads its PBR.
 pub const MBR_XP_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mbr_xp.bin"));
 
+/// Windows 7/8/10/11 MBR boot code. 512 bytes. Same shape as
+/// [`MBR_XP_BOOT`] plus a GPT-protective-MBR refusal: if the active
+/// partition has type 0xEE the MBR halts rather than chain-load.
+pub const MBR_WIN7_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/mbr_win7.bin"));
+
 pub const FAT32_PBR_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/fat32_pbr.bin"));
 pub const NTFS_PBR_BOOT: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ntfs_pbr.bin"));
 

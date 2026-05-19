@@ -32,14 +32,26 @@ const PARTITION_LBA: u64 = 2048; // matches PARTITION_START_LBA
 #[test]
 #[ignore]
 fn mbr_xp_chainloads_active_partition_in_qemu() {
+    let mbr = bootrec::mbr_xp(DISK_SECTORS).expect("mbr_xp");
+    assert_chainload(&mbr, "mbr_xp");
+}
+
+#[test]
+#[ignore]
+fn mbr_win7_chainloads_active_partition_in_qemu() {
+    let mbr = bootrec::mbr_win7(DISK_SECTORS).expect("mbr_win7");
+    assert_chainload(&mbr, "mbr_win7");
+}
+
+fn assert_chainload(mbr: &[u8; 512], variant: &str) {
     if let Err(reason) = check_dependencies() {
-        eprintln!("skipping qemu test: {reason}");
+        eprintln!("skipping qemu test ({variant}): {reason}");
         return;
     }
 
     if bootrec::MBR_XP_BOOT.is_empty() {
         panic!(
-            "MBR_XP_BOOT is empty (built without --features embed-boot-asm). \
+            "MBR blobs are empty (built without --features embed-boot-asm). \
              Re-run: cargo test --test qemu_mbr --features embed-boot-asm -- --ignored"
         );
     }
@@ -48,13 +60,13 @@ fn mbr_xp_chainloads_active_partition_in_qemu() {
     let fake_pbr = build_fake_pbr(&boot_asm).expect("building fake_pbr.bin");
 
     let tmp = tempdir();
-    let image = tmp.join("bootrec-mbr-test.img");
-    create_image(&image, &fake_pbr).expect("creating disk image");
+    let image = tmp.join(format!("bootrec-{variant}.img"));
+    create_image(&image, mbr, &fake_pbr).expect("creating disk image");
 
     let serial = boot_under_qemu(&image).expect("running qemu");
     assert!(
         serial.contains("BOOTREC MBR OK"),
-        "qemu serial output missing 'BOOTREC MBR OK'. Got:\n---\n{serial}\n---"
+        "[{variant}] qemu serial missing 'BOOTREC MBR OK'. Got:\n---\n{serial}\n---"
     );
 }
 
@@ -96,17 +108,16 @@ fn build_fake_pbr(boot_asm: &Path) -> Result<PathBuf, String> {
     Ok(out)
 }
 
-fn create_image(image: &Path, fake_pbr: &Path) -> Result<(), String> {
+fn create_image(image: &Path, mbr: &[u8; 512], fake_pbr: &Path) -> Result<(), String> {
     use std::io::{Seek, SeekFrom, Write};
 
     let mut f = std::fs::File::create(image).map_err(|e| format!("create image: {e}"))?;
     f.set_len(DISK_SECTORS * SECTOR)
         .map_err(|e| format!("set_len: {e}"))?;
 
-    let mbr = bootrec::mbr_xp(DISK_SECTORS).map_err(|e| format!("mbr_xp: {e}"))?;
     f.seek(SeekFrom::Start(0))
         .map_err(|e| format!("seek 0: {e}"))?;
-    f.write_all(&mbr).map_err(|e| format!("write MBR: {e}"))?;
+    f.write_all(mbr).map_err(|e| format!("write MBR: {e}"))?;
 
     let pbr = std::fs::read(fake_pbr).map_err(|e| format!("read fake_pbr: {e}"))?;
     f.seek(SeekFrom::Start(PARTITION_LBA * SECTOR))

@@ -16,7 +16,7 @@ fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let asm_dir = manifest_dir.join("boot-asm");
 
-    let blobs = ["mbr_xp", "fat32_pbr", "ntfs_pbr"];
+    let blobs = ["mbr_xp", "mbr_win7", "fat32_pbr", "ntfs_pbr"];
 
     let embed = env::var("CARGO_FEATURE_EMBED_BOOT_ASM").is_ok();
 

@@ -99,6 +99,17 @@ pub fn mbr_xp(disk_sectors: u64) -> Result<[u8; 512], MbrError> {
     build_mbr(crate::MBR_XP_BOOT, disk_sectors)
 }
 
+/// Variant entry point: Windows 7/8/10/11 MBR with a single active
+/// FAT32 partition. Suitable for booting BOOTMGR-chain install media.
+///
+/// Adds a GPT-protective-MBR refusal vs [`mbr_xp`]: an active partition
+/// of type 0xEE causes the boot code to halt with an error rather than
+/// blindly chain-load. Legacy BIOS booting a GPT disk is almost always
+/// a misconfiguration; the user wants UEFI.
+pub fn mbr_win7(disk_sectors: u64) -> Result<[u8; 512], MbrError> {
+    build_mbr(crate::MBR_WIN7_BOOT, disk_sectors)
+}
+
 /// Construct the MBR for a single-FAT32-active layout. The boot code goes
 /// into bytes 0..440; bytes 446..510 hold one active FAT32-LBA primary
 /// partition starting at LBA 2048, slots 2-4 zeroed, signature 0x55AA at
