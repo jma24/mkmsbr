@@ -7,7 +7,7 @@
 //!         --features "embed-boot-asm compare-mssys" -- --ignored
 //!
 //! Requires:
-//!   - ms-sys installed at `/tmp/ms-sys/bin/ms-sys` or via `BOOTREC_MS_SYS`
+//!   - ms-sys installed at `/tmp/ms-sys/bin/ms-sys` or via `MKMSBR_MS_SYS`
 //!     env var (`git clone https://gitlab.com/cmaiolino/ms-sys.git /tmp/ms-sys && cd /tmp/ms-sys && make`).
 //!   - nasm installed (for `--features embed-boot-asm`).
 //!
@@ -35,7 +35,7 @@ const SUSPICIOUSLY_LOW: usize = 10;
 #[test]
 #[ignore]
 fn mbr_xp_bootcode_distance_from_mssys() {
-    if bootrec::MBR_XP_BOOT.is_empty() {
+    if mkmsbr::MBR_XP_BOOT.is_empty() {
         panic!(
             "MBR_XP_BOOT is empty (built without --features embed-boot-asm). \
              Re-run with --features \"embed-boot-asm compare-mssys\"."
@@ -43,13 +43,13 @@ fn mbr_xp_bootcode_distance_from_mssys() {
     }
     let theirs = oracle::ms_sys_mbr_xp_bootcode()
         .unwrap_or_else(|e| panic!("ms-sys oracle failed: {e}"));
-    assert_distance("mbr_xp", "--mbr", &bootrec::MBR_XP_BOOT[0..440], &theirs);
+    assert_distance("mbr_xp", "--mbr", &mkmsbr::MBR_XP_BOOT[0..440], &theirs);
 }
 
 #[test]
 #[ignore]
 fn mbr_win7_bootcode_distance_from_mssys() {
-    if bootrec::MBR_WIN7_BOOT.is_empty() {
+    if mkmsbr::MBR_WIN7_BOOT.is_empty() {
         panic!(
             "MBR_WIN7_BOOT is empty (built without --features embed-boot-asm). \
              Re-run with --features \"embed-boot-asm compare-mssys\"."
@@ -57,7 +57,7 @@ fn mbr_win7_bootcode_distance_from_mssys() {
     }
     let theirs = oracle::ms_sys_mbr_win7_bootcode()
         .unwrap_or_else(|e| panic!("ms-sys oracle failed: {e}"));
-    assert_distance("mbr_win7", "--mbr7", &bootrec::MBR_WIN7_BOOT[0..440], &theirs);
+    assert_distance("mbr_win7", "--mbr7", &mkmsbr::MBR_WIN7_BOOT[0..440], &theirs);
 }
 
 fn assert_distance(variant: &str, mssys_flag: &str, ours: &[u8], theirs: &[u8]) {
@@ -111,7 +111,7 @@ fn ntfs_pbr_bootcode_regions(sector0: &[u8; 512]) -> Vec<u8> {
 #[test]
 #[ignore]
 fn fat32_pbr_bootmgr_distance_from_mssys() {
-    if bootrec::FAT32_PBR_BOOTMGR_BOOT.is_empty() {
+    if mkmsbr::FAT32_PBR_BOOTMGR_BOOT.is_empty() {
         panic!(
             "FAT32_PBR_BOOTMGR_BOOT is empty (built without --features embed-boot-asm). \
              Re-run with --features \"embed-boot-asm compare-mssys\"."
@@ -120,7 +120,7 @@ fn fat32_pbr_bootmgr_distance_from_mssys() {
     let theirs = oracle::ms_sys_fat32_bootmgr_pbr()
         .unwrap_or_else(|e| panic!("ms-sys PBR oracle failed: {e}"));
     let mut ours_full = [0u8; 512];
-    ours_full.copy_from_slice(&bootrec::FAT32_PBR_BOOTMGR_BOOT[0..512]);
+    ours_full.copy_from_slice(&mkmsbr::FAT32_PBR_BOOTMGR_BOOT[0..512]);
     let ours = pbr_bootcode_regions(&ours_full);
     let theirs = pbr_bootcode_regions(&theirs);
     assert_distance("fat32_pbr_bootmgr", "--fat32pe (sector 0)", &ours, &theirs);
@@ -129,7 +129,7 @@ fn fat32_pbr_bootmgr_distance_from_mssys() {
 #[test]
 #[ignore]
 fn fat32_pbr_ntldr_distance_from_mssys() {
-    if bootrec::FAT32_PBR_NTLDR_MULTI_BOOT.is_empty() {
+    if mkmsbr::FAT32_PBR_NTLDR_MULTI_BOOT.is_empty() {
         panic!(
             "FAT32_PBR_NTLDR_MULTI_BOOT is empty (built without --features embed-boot-asm). \
              Re-run with --features \"embed-boot-asm compare-mssys\"."
@@ -143,7 +143,7 @@ fn fat32_pbr_ntldr_distance_from_mssys() {
     let theirs = oracle::ms_sys_fat32_ntldr_pbr()
         .unwrap_or_else(|e| panic!("ms-sys PBR oracle failed: {e}"));
     let mut ours_full = [0u8; 512];
-    ours_full.copy_from_slice(&bootrec::FAT32_PBR_NTLDR_MULTI_BOOT[0..512]);
+    ours_full.copy_from_slice(&mkmsbr::FAT32_PBR_NTLDR_MULTI_BOOT[0..512]);
     let ours = pbr_bootcode_regions(&ours_full);
     let theirs = pbr_bootcode_regions(&theirs);
     assert_distance(
@@ -168,7 +168,7 @@ fn fat32_pbr_ntldr_distance_from_mssys() {
 #[test]
 #[ignore]
 fn ntfs_pbr_bootmgr_distance_from_mssys() {
-    if bootrec::NTFS_PBR_BOOTMGR_MULTI_BOOT.is_empty() {
+    if mkmsbr::NTFS_PBR_BOOTMGR_MULTI_BOOT.is_empty() {
         panic!(
             "NTFS_PBR_BOOTMGR_MULTI_BOOT is empty (built without --features embed-boot-asm). \
              Re-run with --features \"embed-boot-asm compare-mssys\"."
@@ -185,7 +185,7 @@ fn ntfs_pbr_bootmgr_distance_from_mssys() {
     let theirs = oracle::ms_sys_ntfs_pbr_sector0()
         .unwrap_or_else(|e| panic!("ms-sys NTFS PBR oracle failed: {e}"));
     let mut ours_full = [0u8; 512];
-    ours_full.copy_from_slice(&bootrec::NTFS_PBR_BOOTMGR_MULTI_BOOT[0..512]);
+    ours_full.copy_from_slice(&mkmsbr::NTFS_PBR_BOOTMGR_MULTI_BOOT[0..512]);
     let ours = ntfs_pbr_bootcode_regions(&ours_full);
     let theirs = ntfs_pbr_bootcode_regions(&theirs);
     assert_distance("ntfs_pbr_bootmgr", "--ntfs (sector 0)", &ours, &theirs);
@@ -204,16 +204,16 @@ fn ntfs_pbr_bootmgr_distance_from_mssys() {
 #[test]
 #[ignore]
 fn fat32_pbr_bootmgr_multi_distance_from_mssys() {
-    if bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT.is_empty() {
+    if mkmsbr::FAT32_PBR_BOOTMGR_MULTI_BOOT.is_empty() {
         panic!(
             "FAT32_PBR_BOOTMGR_MULTI_BOOT is empty (built without --features embed-boot-asm). \
              Re-run with --features \"embed-boot-asm compare-mssys\"."
         );
     }
     assert!(
-        bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT.len() >= 1024,
+        mkmsbr::FAT32_PBR_BOOTMGR_MULTI_BOOT.len() >= 1024,
         "multi-sector blob is {} bytes; expected >= 1024",
-        bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT.len()
+        mkmsbr::FAT32_PBR_BOOTMGR_MULTI_BOOT.len()
     );
 
     let theirs_16 = oracle::ms_sys_fat32_bootmgr_pbr_multi()
@@ -221,7 +221,7 @@ fn fat32_pbr_bootmgr_multi_distance_from_mssys() {
 
     // --- Sector 0: same boot-code regions as the single-sector eval. ---
     let mut our_s0 = [0u8; 512];
-    our_s0.copy_from_slice(&bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT[0..512]);
+    our_s0.copy_from_slice(&mkmsbr::FAT32_PBR_BOOTMGR_MULTI_BOOT[0..512]);
     let mut their_s0 = [0u8; 512];
     their_s0.copy_from_slice(&theirs_16[0..512]);
     let ours_regions = pbr_bootcode_regions(&our_s0);
@@ -239,7 +239,7 @@ fn fat32_pbr_bootmgr_multi_distance_from_mssys() {
     // expected best match is ms-sys sector 2, though we still search
     // 1..15 because the historical ms-sys layout uses 0/1/2/6/12 with
     // sector 1 carrying only FSInfo signatures. ---
-    let our_stage2 = &bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT[512..1024];
+    let our_stage2 = &mkmsbr::FAT32_PBR_BOOTMGR_MULTI_BOOT[512..1024];
     let mut best: Option<(usize, usize)> = None; // (distance, sector_idx)
     eprintln!("fat32_pbr_bootmgr_multi stage 2 vs ms-sys --fat32pe sectors 1..15:");
     for i in 1..16usize {

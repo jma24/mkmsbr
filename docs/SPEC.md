@@ -1,4 +1,4 @@
-# V1.0 design: `bootrec` — a clean-room boot-record library
+# V1.0 design: `mkmsbr` — a clean-room boot-record library
 
 ## One-paragraph summary
 
@@ -37,13 +37,13 @@ production-quality boot record passes all four.
 
 ### Layer 1 — Byte-equality vs ms-sys (tightest)
 
-For each variant (e.g. `--fat32pe`, `--mbr7`), `bootrec` produces N bytes
+For each variant (e.g. `--fat32pe`, `--mbr7`), `mkmsbr` produces N bytes
 and we assert them byte-equal to ms-sys's output for the same input.
 
 ```rust
 #[test]
 fn fat32pe_matches_mssys() {
-    let our_bytes  = bootrec::fat32_pbr_bootmgr(/*bpb*/...);
+    let our_bytes  = mkmsbr::fat32_pbr_bootmgr(/*bpb*/...);
     let mssys_bytes = oracle::ms_sys_fat32pe(/*bpb*/...);
     assert_eq!(our_bytes, mssys_bytes);
 }
@@ -59,14 +59,14 @@ Treat this layer as the **strongest** signal but not the **only** one.
 
 ### Layer 2 — QEMU boot smoke test (per variant)
 
-For each variant, build a synthetic disk image with `bootrec`'s output
+For each variant, build a synthetic disk image with `mkmsbr`'s output
 applied, boot it under `qemu-system-i386`, verify a specific success
 signal on serial.
 
 The synthetic test environments:
 
 - **FAT32 + NTLDR stub**: tiny partition with a fake `NTLDR` that prints
-  `BOOTREC OK\r\n` to COM1 and halts. Validates `fat32_pbr_ntldr`.
+  `MKMSBR OK\r\n` to COM1 and halts. Validates `fat32_pbr_ntldr`.
 - **FAT32 + bootmgr stub**: same, fake `BOOTMGR`. Validates
   `fat32_pbr_bootmgr` (the multi-sector one).
 - **MBR + active partition + dummy PBR that just prints to serial**:
@@ -148,7 +148,7 @@ A new sibling Rust crate, either inside the usbwin workspace or
 standalone:
 
 ```
-bootrec/
+mkmsbr/
 ├── Cargo.toml                # MIT-licensed
 ├── README.md
 ├── src/
@@ -254,17 +254,17 @@ Wall" or "clean-room" reimplementation, the same shape Compaq used in
 
 ### The air gap
 
-Two distinct roles exist in `bootrec` development:
+Two distinct roles exist in `mkmsbr` development:
 
 | Role            | What they see                                           | What they produce               |
 |-----------------|---------------------------------------------------------|----------------------------------|
-| **Spec readers** | FAT32 spec, BIOS docs, ms-sys's *output bytes* (as a black box) | bootrec source code (NASM, Rust) |
-| **Oracle plumbing** | Whatever they need; usually nothing | The test harness that invokes ms-sys as subprocess and compares its output to bootrec's |
+| **Spec readers** | FAT32 spec, BIOS docs, ms-sys's *output bytes* (as a black box) | mkmsbr source code (NASM, Rust) |
+| **Oracle plumbing** | Whatever they need; usually nothing | The test harness that invokes ms-sys as subprocess and compares its output to mkmsbr's |
 
 The same person can do both *as long as the Spec-reader role never touches
 ms-sys's source code*. ms-sys's `.c` and `.h` files (especially `inc/*.h`
 which contain the actual boot-record byte arrays as C arrays) are
-**forbidden reading** for anyone writing bootrec.
+**forbidden reading** for anyone writing mkmsbr.
 
 If a contributor has read ms-sys source code, they're tainted for the
 duration of their useful memory of it (months, conservatively). They can
@@ -324,7 +324,7 @@ clean-room reimplementation that never sees ms-sys's bytes (only their
 output, which is observed behavior, not protected expression) sidesteps
 this entire question.
 
-bootrec's bytes will be derived solely from the FAT32 / NTFS / BIOS specs.
+mkmsbr's bytes will be derived solely from the FAT32 / NTFS / BIOS specs.
 If they happen to be byte-identical to Microsoft's bytes (because the
 space of "correct implementations of this small task" is small), that's
 parallel invention, not copying.
@@ -379,7 +379,7 @@ The mechanisms that catch the breakage:
 
 #### 1. Contributor reading declaration (per-PR)
 
-Every PR that touches `bootrec/src/` or `bootrec/boot-asm/` includes
+Every PR that touches `mkmsbr/src/` or `mkmsbr/boot-asm/` includes
 a YAML block in the description:
 
 ```yaml
@@ -426,7 +426,7 @@ checking this log:
 ```
 
 If "tainted" sources appear, the contributor cannot work on
-`bootrec/src/` (boot code) — only on `bootrec/tests/oracle/` (where
+`mkmsbr/src/` (boot code) — only on `mkmsbr/tests/oracle/` (where
 seeing ms-sys output is the whole point). The tainting half-life is
 conservatively 24 months from last-read; after that, on case-by-case
 basis with project-lead sign-off.
@@ -434,7 +434,7 @@ basis with project-lead sign-off.
 #### 3. Forbidden-symbol grep (CI gate)
 
 A simple CI check that fails the build if any of these patterns appear
-anywhere in `bootrec/src/` or `bootrec/boot-asm/`:
+anywhere in `mkmsbr/src/` or `mkmsbr/boot-asm/`:
 
 ```sh
 # .github/workflows/clean_room_check.sh
@@ -448,7 +448,7 @@ FORBIDDEN_PATTERNS=(
     "/* extracted from"  # common "I copied this" comment style
 )
 for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
-    if grep -r "$pattern" bootrec/src/ bootrec/boot-asm/; then
+    if grep -r "$pattern" mkmsbr/src/ mkmsbr/boot-asm/; then
         echo "FORBIDDEN PATTERN FOUND: $pattern"
         exit 1
     fi
@@ -483,8 +483,8 @@ this" rather than "fail the build."
 
 #### 5. Independent code review (per release)
 
-Before each `bootrec` release tag, the boot-code files (`bootrec/src/`,
-`bootrec/boot-asm/`) are reviewed by a contributor who has *not*
+Before each `mkmsbr` release tag, the boot-code files (`mkmsbr/src/`,
+`mkmsbr/boot-asm/`) are reviewed by a contributor who has *not*
 written any of the code, with explicit focus on: "does this look
 clean-room, or does anything look copy-pasted from somewhere
 familiar?" The reviewer also confirms the contributor reading log
@@ -524,7 +524,7 @@ green:
 Layer 4 (real hardware) is required at release-gate, not per-PR.
 
 The combination is what makes the claim **verifiable**: if any
-reviewer in the next 30 years wants to challenge whether bootrec is
+reviewer in the next 30 years wants to challenge whether mkmsbr is
 genuinely clean-room, they can read the reading log, audit the PR
 attestations, run the forbidden-symbol checks themselves, and inspect
 the similarity-distribution data. Nothing depends on trusting the
@@ -532,29 +532,29 @@ authors' word.
 
 ## Form factor: library AND binary
 
-`bootrec` ships as a single Cargo crate that produces both a Rust library
+`mkmsbr` ships as a single Cargo crate that produces both a Rust library
 and a CLI binary. The same code, two consumption modes.
 
-### Library (`bootrec` Rust crate)
+### Library (`mkmsbr` Rust crate)
 
 The canonical API. usbwin links against it directly, gets Rust-typed
 input (`Fat32Bpb`, `DiskGeometry`, etc.) and Rust-typed output
 (`[u8; 512]`, `PbrBytes`). No subprocess overhead, no string parsing,
 no shell escaping. usbwin's `pipeline/windows.rs` switches from
-`Command::new(ms_sys).args(...)` to `bootrec::fat32_pbr_bootmgr(bpb)`.
+`Command::new(ms_sys).args(...)` to `mkmsbr::fat32_pbr_bootmgr(bpb)`.
 
 ```rust
 // In usbwin's Cargo.toml:
-bootrec = { path = "../bootrec" }   // or version = "1.0" when published
+mkmsbr = { path = "../mkmsbr" }   // or version = "1.0" when published
 
 // In usbwin's pipeline/windows.rs:
-let pbr_bytes = bootrec::fat32_pbr_bootmgr(bpb);
+let pbr_bytes = mkmsbr::fat32_pbr_bootmgr(bpb);
 dev.write_at(0, &pbr_bytes[0])?;    // sector 0
 dev.write_at(512, &pbr_bytes[1])?;  // sector 1
 dev.write_at(12 * 512, &pbr_bytes[12])?;  // sector 12
 ```
 
-### Binary (`bootrec` CLI)
+### Binary (`mkmsbr` CLI)
 
 A thin wrapper that exposes the library as a command-line tool — a
 drop-in replacement for ms-sys for the variants we support. ~50 lines
@@ -562,27 +562,27 @@ of clap-based argument parsing around library calls.
 
 ```sh
 # usbwin's --mbr7 equivalent
-bootrec --mbr-win7 /dev/rdisk6
+mkmsbr --mbr-win7 /dev/rdisk6
 
 # usbwin's --fat32pe equivalent
-bootrec --fat32-bootmgr /dev/rdisk6s1
+mkmsbr --fat32-bootmgr /dev/rdisk6s1
 
 # Or by variant explicitly
-bootrec --variant fat32-bootmgr --output /dev/rdisk6s1
+mkmsbr --variant fat32-bootmgr --output /dev/rdisk6s1
 ```
 
 The CLI uses the SAME library functions internally. The binary form
 exists because:
 
 1. **Drop-in for existing recipes** — anyone using ms-sys in a shell
-   script can switch by changing `ms-sys --fat32pe` to `bootrec
+   script can switch by changing `ms-sys --fat32pe` to `mkmsbr
    --fat32-bootmgr`. Lowers adoption friction for the broader
    USB-tool ecosystem (WinSetupFromUSB-likes, retro-computing folks).
 2. **Cross-language interop** — Python/Go/Bash consumers don't need a
    Rust toolchain.
 3. **Reproducibility verification** — for the audit case ("show me
-   bootrec produces the same bytes ms-sys does"), an auditor can run
-   `bootrec` and `ms-sys` side by side without setting up a Rust dev
+   mkmsbr produces the same bytes ms-sys does"), an auditor can run
+   `mkmsbr` and `ms-sys` side by side without setting up a Rust dev
    environment.
 4. **Oracle-of-our-own-binary tests** — the test harness can use the
    CLI binary as the black-box subprocess, exactly like it uses
@@ -592,23 +592,23 @@ exists because:
 
 ### Crate layout
 
-Same `bootrec/` workspace member from the earlier layout section, with
+Same `mkmsbr/` workspace member from the earlier layout section, with
 `Cargo.toml` declaring both targets:
 
 ```toml
 [package]
-name = "bootrec"
+name = "mkmsbr"
 version = "1.0.0"
 edition = "2021"
 license = "MIT"
 
 [lib]
-name = "bootrec"
+name = "mkmsbr"
 path = "src/lib.rs"
 
 [[bin]]
-name = "bootrec"
-path = "src/bin/bootrec.rs"
+name = "mkmsbr"
+path = "src/bin/mkmsbr.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }   # binary only; cargo
@@ -626,7 +626,7 @@ binary version.
 Where it's obvious, the CLI flag names mirror ms-sys's so the muscle
 memory transfers:
 
-| ms-sys flag      | bootrec flag          | Library function             |
+| ms-sys flag      | mkmsbr flag          | Library function             |
 |------------------|------------------------|------------------------------|
 | `--mbr7`         | `--mbr-win7`           | `mbr_win7(...)`              |
 | `--mbr`          | `--mbr-xp`             | `mbr_xp(...)`                |
@@ -634,14 +634,14 @@ memory transfers:
 | `--fat32nt`      | `--fat32-ntldr`        | `fat32_pbr_ntldr(...)`       |
 | `--ntfs`         | `--ntfs-bootmgr`       | `ntfs_pbr_bootmgr(...)`      |
 
-bootrec's flags are slightly more verbose (-pe vs -bootmgr) because the
+mkmsbr's flags are slightly more verbose (-pe vs -bootmgr) because the
 ms-sys names are domain-jargon-y; new users shouldn't have to know that
 "PE" means "Preinstall Environment" to write a Win 7 boot record. The
 old names are accepted as aliases for muscle memory.
 
 ## Audience and packaging
 
-`bootrec` is its **own project**, not a usbwin subcomponent. Separate
+`mkmsbr` is its **own project**, not a usbwin subcomponent. Separate
 repo, separate releases, separate brew formula, independent
 distribution.
 
@@ -653,53 +653,53 @@ likely dozens to low-hundreds of people total, growing slowly as more
 sysadmins, IT folk, and retro-tech enthusiasts hit the post-Rosetta
 gap.
 
-`bootrec`'s audience is much wider:
+`mkmsbr`'s audience is much wider:
 
 | Audience                                       | Approximate size | Notes |
 |------------------------------------------------|------------------|-------|
-| Linux/BSD users replacing ms-sys (cleaner replacement) | ~thousands       | The largest single bucket. ms-sys is in most Linux distros' repos but GPL-2 and ancient; bootrec is MIT, Rust, maintained. |
-| Cross-platform USB-tool maintainers            | ~dozens of projects, transitively reaching thousands | Ventoy, WoeUSB, multibootusb, easy2boot, custom in-house. They want bootrec as a dep. |
+| Linux/BSD users replacing ms-sys (cleaner replacement) | ~thousands       | The largest single bucket. ms-sys is in most Linux distros' repos but GPL-2 and ancient; mkmsbr is MIT, Rust, maintained. |
+| Cross-platform USB-tool maintainers            | ~dozens of projects, transitively reaching thousands | Ventoy, WoeUSB, multibootusb, easy2boot, custom in-house. They want mkmsbr as a dep. |
 | Retro-computing hobbyists                      | ~thousands       | MSFN, boot-land, Vogons forum people. Hand-rolling install media. |
 | Forensic / data-recovery folks                 | ~hundreds        | Niche but high-skill; rebuilding damaged boot records is a real use case. |
 | Embedded / firmware engineers                  | ~thousands       | Anyone shipping x86 boot media for kiosks, SBCs, signage, industrial. |
 | CI / automation                                | ~hundreds        | Linux CI runners producing Windows install media as artifacts. |
-| Educators / OS-dev curriculum                  | ~hundreds        | bootrec is one of few public reference implementations derived purely from specs; teaching material. |
+| Educators / OS-dev curriculum                  | ~hundreds        | mkmsbr is one of few public reference implementations derived purely from specs; teaching material. |
 
-usbwin **uses** bootrec. usbwin is a downstream consumer like any
-other. The dependency direction is `usbwin → bootrec`, never the
+usbwin **uses** mkmsbr. usbwin is a downstream consumer like any
+other. The dependency direction is `usbwin → mkmsbr`, never the
 reverse.
 
 ### What this implies operationally
 
-1. **Separate repository** when the work starts in earnest. `bootrec`
+1. **Separate repository** when the work starts in earnest. `mkmsbr`
    on GitHub as its own project; usbwin pins a Cargo dependency by
-   git URL during dev and by published version after `bootrec` hits
+   git URL during dev and by published version after `mkmsbr` hits
    crates.io.
 
 2. **Separate Homebrew formulas**, two install commands:
 
    ```sh
-   brew install bootrec          # standalone — what the wider audience wants
-   brew install usbwin           # depends on bootrec; transitively installs it
+   brew install mkmsbr          # standalone — what the wider audience wants
+   brew install usbwin           # depends on mkmsbr; transitively installs it
    ```
 
-   Each formula maintained in its own tap. bootrec's would be a
+   Each formula maintained in its own tap. mkmsbr's would be a
    better candidate for eventual homebrew-core inclusion than usbwin's,
    precisely because the audience is wider and the tool is smaller and
    more general-purpose.
 
-3. **Separate clean-room audits.** bootrec's reading log, PR
+3. **Separate clean-room audits.** mkmsbr's reading log, PR
    attestations, similarity-distribution data are all tracked in
-   bootrec's repo. usbwin's repo doesn't carry that burden — it links
-   against bootrec and inherits the audit conclusion as a third party
+   mkmsbr's repo. usbwin's repo doesn't carry that burden — it links
+   against mkmsbr and inherits the audit conclusion as a third party
    would. The clean-room story is structurally cleaner this way.
 
-4. **Independent release cadence.** bootrec might hit 1.0 long before
-   usbwin's clean-room-bootrec story is integrated. usbwin meanwhile
+4. **Independent release cadence.** mkmsbr might hit 1.0 long before
+   usbwin's clean-room-mkmsbr story is integrated. usbwin meanwhile
    continues shipping with ms-sys shell-out (v0.2/v0.3 path) and
-   migrates to bootrec when it makes sense — possibly as v2.0.
+   migrates to mkmsbr when it makes sense — possibly as v2.0.
 
-5. **Different governance later.** If bootrec gains maintainers from
+5. **Different governance later.** If mkmsbr gains maintainers from
    the wider audience (Linux distros, USB-tool authors), it can have
    its own governance model. usbwin stays a smaller-team project. The
    API contract between them is a normal library API contract — same
@@ -708,13 +708,13 @@ reverse.
 
 ### Brew packaging sketch
 
-`bootrec`'s formula (the one the wider audience wants):
+`mkmsbr`'s formula (the one the wider audience wants):
 
 ```ruby
-class Bootrec < Formula
+class Mkmsbr < Formula
   desc "Clean-room implementation of Microsoft boot records (MBR/PBR)"
-  homepage "https://github.com/jmappleby/bootrec"
-  url "https://github.com/jmappleby/bootrec/archive/v1.0.0.tar.gz"
+  homepage "https://github.com/jmappleby/mkmsbr"
+  url "https://github.com/jmappleby/mkmsbr/archive/v1.0.0.tar.gz"
   sha256 "..."
   license "MIT"
 
@@ -742,7 +742,7 @@ class Usbwin < Formula
   sha256 "..."
   license "MIT"
 
-  depends_on "bootrec"          # transitive: brings in bootrec
+  depends_on "mkmsbr"          # transitive: brings in mkmsbr
   depends_on "rust" => :build
   depends_on "nasm" => :build
 
@@ -756,14 +756,14 @@ Two brew commands, two install paths, clean dependency graph.
 
 ### Migration plan for usbwin
 
-This is what happens to usbwin when bootrec is ready:
+This is what happens to usbwin when mkmsbr is ready:
 
 - **Today (v0.2 / v0.3):** usbwin shells out to ms-sys. Working.
 - **v1.0 (usbwin):** Same. ms-sys-based, real-hardware-verified.
-- **v2.0 (usbwin) — coincides with bootrec 1.0:** usbwin replaces
-  the ms-sys shell-out with `bootrec::*` library calls. The two
+- **v2.0 (usbwin) — coincides with mkmsbr 1.0:** usbwin replaces
+  the ms-sys shell-out with `mkmsbr::*` library calls. The two
   shell-out helpers (`ms_sys_mbr7`, `ms_sys_fat32pe`, etc.) become
-  thin wrappers around `bootrec::mbr_win7()` and `bootrec::fat32_pbr_bootmgr()`.
+  thin wrappers around `mkmsbr::mbr_win7()` and `mkmsbr::fat32_pbr_bootmgr()`.
   ms-sys becomes optional (kept around as a fallback / oracle).
 - **v3.0 (usbwin):** ms-sys removed entirely. Single MIT binary.
 
@@ -771,11 +771,11 @@ Each step is independently shippable; the migration is incremental.
 
 ## License
 
-`bootrec` is MIT-2.0. Independent of usbwin (could be used by other
+`mkmsbr` is MIT-2.0. Independent of usbwin (could be used by other
 tools — e.g. a Linux LiveUSB creator, a forensic image preparation tool,
 a retro-computing utility). Single self-contained crate.
 
-ms-sys's GPL-2 license doesn't transit into `bootrec` because:
+ms-sys's GPL-2 license doesn't transit into `mkmsbr` because:
 - We don't link, include, or distribute ms-sys
 - Test-time subprocess invocation is mere aggregation (per FSF)
 - Output bytes are not copyrightable (data, not creative expression — and

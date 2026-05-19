@@ -17,11 +17,11 @@
 ; (BPB.FSInfo = 1 in newfs_msdos defaults). Clobbering it would invalidate
 ; the FSInfo signatures and force the FS driver to recompute free-cluster
 ; counts on first mount. ms-sys does the same: --fat32pe leaves LBA 1
-; alone and places stage-2 code at LBA 2/6/12. bootrec mirrors the LBA-2
+; alone and places stage-2 code at LBA 2/6/12. mkmsbr mirrors the LBA-2
 ; layout; LBA 6/12 backup paths are not used.
 ;
 ; The BPB at offsets 3..89 is filesystem state, spliced by
-; bootrec::splice_fat32_pbr_multi from the existing freshly-formatted
+; mkmsbr::splice_fat32_pbr_multi from the existing freshly-formatted
 ; partition.
 ;
 ; Per docs/SPEC.md §Component breakdown, this is the v1.0 fat32_pbr_bootmgr

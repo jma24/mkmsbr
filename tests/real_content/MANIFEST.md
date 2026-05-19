@@ -1,7 +1,7 @@
 # Layer-3 real-content fixtures
 
 Layer-3 evals (`docs/SPEC.md` §Real-content fixtures) need real Microsoft
-boot binaries to confirm bootrec's PBR can chain-load them — not just
+boot binaries to confirm mkmsbr's PBR can chain-load them — not just
 the fake stubs Layer 2 uses. The binaries themselves are **copyrighted
 Microsoft software and not redistributable**: every developer and CI
 runner stages their own copy from an install ISO they hold a license for,
@@ -53,7 +53,7 @@ The Layer-3 QEMU smoke tests (`tests/qemu_pbr_real.rs`) format a FAT32
 image, `mcopy` these real binaries onto it, splice our PBR through
 `splice_fat32_pbr` / `splice_fat32_pbr_multi`, and boot in QEMU.
 Success criterion: guest block-read count via `qemu -trace blk_co_preadv`
-exceeds a threshold (default 50; override with `BOOTREC_L3_MIN_READS`).
+exceeds a threshold (default 50; override with `MKMSBR_L3_MIN_READS`).
 A successful chainload reads the loader file off FAT plus the real
 loader's own subsequent reads — hundreds to thousands in practice.
 A halted PBR issues only single- to double-digit reads.

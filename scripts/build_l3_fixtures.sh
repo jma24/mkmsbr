@@ -14,8 +14,8 @@
 #       --win7-iso /path/to/win7.iso
 #
 # Or via env vars (useful in CI):
-#   BOOTREC_XP_ISO=/path/to/xp.iso \
-#   BOOTREC_WIN7_ISO=/path/to/win7.iso \
+#   MKMSBR_XP_ISO=/path/to/xp.iso \
+#   MKMSBR_WIN7_ISO=/path/to/win7.iso \
 #       scripts/build_l3_fixtures.sh
 #
 # Either flag/var may be omitted to skip that variant.
@@ -28,8 +28,8 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$REPO_ROOT/tests/real_content"
 
-XP_ISO="${BOOTREC_XP_ISO:-}"
-WIN7_ISO="${BOOTREC_WIN7_ISO:-}"
+XP_ISO="${MKMSBR_XP_ISO:-}"
+WIN7_ISO="${MKMSBR_WIN7_ISO:-}"
 FORCE=0
 
 while [[ $# -gt 0 ]]; do
@@ -49,7 +49,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$XP_ISO" && -z "$WIN7_ISO" ]]; then
-    echo "no ISO supplied; pass --xp-iso and/or --win7-iso (or set BOOTREC_XP_ISO / BOOTREC_WIN7_ISO)" >&2
+    echo "no ISO supplied; pass --xp-iso and/or --win7-iso (or set MKMSBR_XP_ISO / MKMSBR_WIN7_ISO)" >&2
     exit 2
 fi
 
@@ -88,7 +88,7 @@ mount_iso() {
             echo "$mp"
             ;;
         Linux)
-            mp="$(mktemp -d -t bootrec-iso-XXXXXX)"
+            mp="$(mktemp -d -t mkmsbr-iso-XXXXXX)"
             sudo mount -o loop,ro "$iso" "$mp"
             echo "$mp"
             ;;

@@ -10,14 +10,14 @@
 //!   - `mformat` + `mcopy` (mtools) for canonical FAT32 image construction
 //!
 //! Per-variant flow:
-//!   1. Build the fake loader (NASM, prints "BOOTREC OK\n" to COM1, halts).
+//!   1. Build the fake loader (NASM, prints "MKMSBR OK\n" to COM1, halts).
 //!   2. Create a 64 MiB FAT32 image with the fake loader at root, under
 //!      the filename the variant searches for (BOOTMGR for the bootmgr
 //!      variant, NTLDR for the ntldr variant).
 //!   3. Splice our PBR blob through `splice_fat32_pbr` (preserving the
 //!      newly-formatted BPB).
 //!   4. Boot under qemu-system-i386 with `-serial stdio`.
-//!   5. Pass if serial contains "BOOTREC OK".
+//!   5. Pass if serial contains "MKMSBR OK".
 //!
 //! When this passes, our PBR is byte-correct enough to chain-load an x86
 //! binary by name from a FAT32 volume. That's the contract.
@@ -31,14 +31,14 @@ const IMAGE_BYTES: u64 = 64 * 1024 * 1024;
 #[test]
 #[ignore]
 fn fat32_pbr_bootmgr_chainloads_in_qemu() {
-    assert_chainload(bootrec::FAT32_PBR_BOOTMGR_BOOT, "BOOTMGR", "bootmgr");
+    assert_chainload(mkmsbr::FAT32_PBR_BOOTMGR_BOOT, "BOOTMGR", "bootmgr");
 }
 
 #[test]
 #[ignore]
 fn fat32_pbr_ntldr_chainloads_in_qemu() {
     assert_multi_chainload(
-        bootrec::FAT32_PBR_NTLDR_MULTI_BOOT,
+        mkmsbr::FAT32_PBR_NTLDR_MULTI_BOOT,
         "NTLDR",
         "ntldr_multi",
     );
@@ -48,7 +48,7 @@ fn fat32_pbr_ntldr_chainloads_in_qemu() {
 #[ignore]
 fn fat32_pbr_bootmgr_multi_chainloads_in_qemu() {
     assert_multi_chainload(
-        bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT,
+        mkmsbr::FAT32_PBR_BOOTMGR_MULTI_BOOT,
         "BOOTMGR",
         "bootmgr_multi",
     );
@@ -68,7 +68,7 @@ fn fat32_pbr_bootmgr_multi_chainloads_in_qemu() {
 ///   5. Overwrite LBA 0 with the resulting bootsector (BPB preserved by
 ///      the splice; the formatter's PBR code is replaced).
 ///   6. Boot the image under qemu-system-i386.
-///   7. Pass if serial contains "BOOTREC OK" — the same marker the
+///   7. Pass if serial contains "MKMSBR OK" — the same marker the
 ///      fake_bootmgr.bin payload prints.
 ///
 /// HiddSec is 0 on a bare partition image (no MBR), so the bootsector's
@@ -83,7 +83,7 @@ fn xp_setup_chain_bootsect_chainloads_in_qemu() {
         eprintln!("skipping setup-chain test: {reason}");
         return;
     }
-    if bootrec::XP_SETUP_CHAIN_BOOTSECT_BOOT.is_empty() {
+    if mkmsbr::XP_SETUP_CHAIN_BOOTSECT_BOOT.is_empty() {
         panic!(
             "XP_SETUP_CHAIN_BOOTSECT_BOOT empty (built without --features embed-boot-asm). \
              Re-run: cargo test --test qemu_pbr --features embed-boot-asm -- --ignored"
@@ -104,7 +104,7 @@ fn xp_setup_chain_bootsect_chainloads_in_qemu() {
     payload.resize(512, 0);
 
     let tmp = tempdir();
-    let image = tmp.join("bootrec-setup-chain.img");
+    let image = tmp.join("mkmsbr-setup-chain.img");
     create_fat32_image_only(&image).expect("creating FAT32 image");
 
     // Write payload at the known LBA via raw I/O (skips FAT).
@@ -114,19 +114,19 @@ fn xp_setup_chain_bootsect_chainloads_in_qemu() {
     let mut formatter_sector0 = [0u8; 512];
     read_at_lba(&image, 0, &mut formatter_sector0).expect("reading sector 0");
 
-    let runs = [bootrec::LbaRun {
+    let runs = [mkmsbr::LbaRun {
         start_lba: PAYLOAD_LBA,
         sector_count: 1,
     }];
-    let bootsect = bootrec::build_xp_setup_chain_bootsect(&formatter_sector0, 0x2000, &runs)
+    let bootsect = mkmsbr::build_xp_setup_chain_bootsect(&formatter_sector0, 0x2000, &runs)
         .expect("build_xp_setup_chain_bootsect");
 
     write_at_lba(&image, 0, &bootsect).expect("writing bootsect at LBA 0");
 
     let serial = boot_under_qemu(&image).expect("running qemu");
     assert!(
-        serial.contains("BOOTREC OK"),
-        "[setup-chain] qemu serial missing 'BOOTREC OK'. Got:\n---\n{serial}\n---"
+        serial.contains("MKMSBR OK"),
+        "[setup-chain] qemu serial missing 'MKMSBR OK'. Got:\n---\n{serial}\n---"
     );
 }
 
@@ -139,7 +139,7 @@ fn create_fat32_image_only(image: &Path) -> Result<(), String> {
     let fmt = Command::new("mformat")
         .args(["-F", "-i"])
         .arg(image)
-        .args(["-v", "BOOTREC", "::"])
+        .args(["-v", "MKMSBR", "::"])
         .output()
         .map_err(|e| format!("mformat: {e}"))?;
     if !fmt.status.success() {
@@ -191,14 +191,14 @@ fn assert_chainload(blob: &[u8], target_filename: &str, variant: &str) {
     let fake_loader = build_fake_loader(&boot_asm).expect("building fake_bootmgr.bin");
 
     let tmp = tempdir();
-    let image = tmp.join(format!("bootrec-pbr-{variant}.img"));
+    let image = tmp.join(format!("mkmsbr-pbr-{variant}.img"));
     create_fat32_image(&image, &fake_loader, target_filename).expect("creating FAT32 image");
     splice_our_pbr(&image, blob).expect("splicing PBR");
 
     let serial = boot_under_qemu(&image).expect("running qemu");
     assert!(
-        serial.contains("BOOTREC OK"),
-        "[{variant}] qemu serial missing 'BOOTREC OK'. Got:\n---\n{serial}\n---"
+        serial.contains("MKMSBR OK"),
+        "[{variant}] qemu serial missing 'MKMSBR OK'. Got:\n---\n{serial}\n---"
     );
 }
 
@@ -224,14 +224,14 @@ fn assert_multi_chainload(blob: &[u8], target_filename: &str, variant: &str) {
     let fake_loader = build_fake_loader(&boot_asm).expect("building fake_bootmgr.bin");
 
     let tmp = tempdir();
-    let image = tmp.join(format!("bootrec-pbr-{variant}.img"));
+    let image = tmp.join(format!("mkmsbr-pbr-{variant}.img"));
     create_fat32_image(&image, &fake_loader, target_filename).expect("creating FAT32 image");
     splice_our_multi_pbr(&image, blob).expect("splicing multi-sector PBR");
 
     let serial = boot_under_qemu(&image).expect("running qemu");
     assert!(
-        serial.contains("BOOTREC OK"),
-        "[{variant}] qemu serial missing 'BOOTREC OK'. Got:\n---\n{serial}\n---"
+        serial.contains("MKMSBR OK"),
+        "[{variant}] qemu serial missing 'MKMSBR OK'. Got:\n---\n{serial}\n---"
     );
 }
 
@@ -281,7 +281,7 @@ fn create_fat32_image(image: &Path, fake_loader: &Path, target_filename: &str) -
     let fmt = Command::new("mformat")
         .args(["-F", "-i"])
         .arg(image)
-        .args(["-v", "BOOTREC", "::"])
+        .args(["-v", "MKMSBR", "::"])
         .output()
         .map_err(|e| format!("mformat: {e}"))?;
     if !fmt.status.success() {
@@ -320,7 +320,7 @@ fn splice_our_pbr(image: &Path, blob: &[u8]) -> Result<(), String> {
     let mut existing = [0u8; 512];
     file.read_exact(&mut existing)
         .map_err(|e| format!("reading existing PBR: {e}"))?;
-    let spliced = bootrec::splice_fat32_pbr(&existing, blob)
+    let spliced = mkmsbr::splice_fat32_pbr(&existing, blob)
         .map_err(|e| format!("splice_fat32_pbr: {e}"))?;
     file.seek(SeekFrom::Start(0))
         .map_err(|e| format!("seek: {e}"))?;
@@ -343,7 +343,7 @@ fn splice_our_multi_pbr(image: &Path, blob: &[u8]) -> Result<(), String> {
     let mut existing = [0u8; 1024];
     file.read_exact(&mut existing)
         .map_err(|e| format!("reading existing PBR + FSInfo: {e}"))?;
-    let spliced = bootrec::splice_fat32_pbr_multi(&existing, blob)
+    let spliced = mkmsbr::splice_fat32_pbr_multi(&existing, blob)
         .map_err(|e| format!("splice_fat32_pbr_multi: {e}"))?;
     file.seek(SeekFrom::Start(0))
         .map_err(|e| format!("seek: {e}"))?;
@@ -388,7 +388,7 @@ fn boot_under_qemu(image: &Path) -> Result<String, String> {
 }
 
 fn tempdir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("bootrec-pbr-qemu-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("mkmsbr-pbr-qemu-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

@@ -1,16 +1,16 @@
 [package]
-name = "bootrec"
+name = "mkmsbr"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT"
-repository = "https://github.com/jma24/bootrec"
+repository = "https://github.com/jma24/mkmsbr"
 authors = ["John Appleby <johnmichaelappleby@gmail.com>"]
 description = "Clean-room library + CLI for Microsoft-compatible MBR and FAT32/NTFS boot records."
 build = "build.rs"
 
 [lib]
-name = "bootrec"
+name = "mkmsbr"
 path = "src/lib.rs"
 
 [features]
@@ -21,7 +21,7 @@ path = "src/lib.rs"
 embed-boot-asm = []
 
 # Gates the byte-equality test vs ms-sys reference blobs. Requires
-# BOOTREC_MSSYS_BLOBS_DIR env var pointing at a local ms-sys checkout.
+# MKMSBR_MSSYS_BLOBS_DIR env var pointing at a local ms-sys checkout.
 compare-mssys = []
 
 [dependencies]

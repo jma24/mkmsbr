@@ -1,7 +1,7 @@
 # Assemble the three boot-record blobs to 512-byte raw binaries.
 # Output: build/{mbr,fat32_pbr,ntfs_pbr}.bin
 #
-# Build is also invoked from bootrec's top-level build.rs directly via `nasm`
+# Build is also invoked from mkmsbr's top-level build.rs directly via `nasm`
 # when the `embed-boot-asm` cargo feature is on. This Makefile exists for
 # manual iteration during NASM development.
 
@@ -12,7 +12,7 @@ SRC := mbr_xp.asm mbr_win7.asm fat32_pbr_bootmgr.asm fat32_pbr_ntldr.asm
 OUT := $(SRC:%.asm=build/%.bin)
 
 # Multi-sector variants: assembled as sector0.bin + sector1.bin under
-# build/<variant>/ (consumers concatenate them — see bootrec/build.rs).
+# build/<variant>/ (consumers concatenate them — see mkmsbr/build.rs).
 MULTI_VARIANTS := fat32_pbr_bootmgr ntfs_pbr_bootmgr
 MULTI_SECTORS := sector0.bin sector1.bin
 MULTI_OUT := $(foreach v,$(MULTI_VARIANTS),$(foreach s,$(MULTI_SECTORS),build/$(v)/$(s)))

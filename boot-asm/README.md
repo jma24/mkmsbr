@@ -1,6 +1,6 @@
 # boot-asm
 
-Hand-written NASM source for the boot-record blobs bootrec embeds.
+Hand-written NASM source for the boot-record blobs mkmsbr embeds.
 
 | File           | What it does                                                    |
 |----------------|-----------------------------------------------------------------|
@@ -13,7 +13,7 @@ Future variants per `docs/SPEC.md` §Component breakdown: `mbr_win7.asm`,
 `ntfs_pbr_bootmgr/`.
 
 Each file assembles to **exactly 512 bytes** of raw binary. The build is
-invoked from bootrec's top-level `build.rs` when the `embed-boot-asm`
+invoked from mkmsbr's top-level `build.rs` when the `embed-boot-asm`
 feature is on.
 
 ## Manual build
@@ -30,7 +30,7 @@ ls -l build/    # mbr.bin fat32_pbr.bin ntfs_pbr.bin, 512 bytes each
 Three layers, ordered by feedback-loop speed. See [`docs/SPEC.md`](../docs/SPEC.md) §Verifiability hierarchy for the full story.
 
 1. **`cargo test`** — unit tests on the splice logic and partition-table encoding.
-2. **Byte equality vs ms-sys** (gated): `cargo test --features compare-mssys` with `BOOTREC_MSSYS_BLOBS_DIR` set. *Eval framework in progress.*
+2. **Byte equality vs ms-sys** (gated): `cargo test --features compare-mssys` with `MKMSBR_MSSYS_BLOBS_DIR` set. *Eval framework in progress.*
 3. **QEMU smoke test**: `cargo test --test qemu_pbr --features embed-boot-asm -- --ignored` boots a synthetic FAT32 image whose first sector uses our PBR.
 4. **Real hardware**: dedicated checklist (TODO).
 

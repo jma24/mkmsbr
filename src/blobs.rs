@@ -1,7 +1,7 @@
 //! The embedded boot-record blobs. Assembled at build time from `boot-asm/`
 //! and `include_bytes!`'d here. Without the `embed-boot-asm` feature these
 //! are empty slices — any code path that needs them surfaces a clear
-//! error at runtime ("bootrec was built without boot blobs; rebuild with
+//! error at runtime ("mkmsbr was built without boot blobs; rebuild with
 //! --features embed-boot-asm").
 
 /// Windows 2000/XP/2003 MBR boot code. 512 bytes. Loaded by BIOS at

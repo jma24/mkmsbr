@@ -1,5 +1,5 @@
 ; xp_setup_chain_bootsect.asm — single-sector bootsector emitted by
-; bootrec::build_xp_setup_chain_bootsect.
+; mkmsbr::build_xp_setup_chain_bootsect.
 ;
 ; Loaded by NTLDR at 0x0000:0x7C00 via boot.ini's bootsector-entry
 ; mechanism (the same `C:\$WIN_NT$.~BT\BOOTSECT.DAT="..."` line that

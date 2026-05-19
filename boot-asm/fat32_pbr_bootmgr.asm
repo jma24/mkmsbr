@@ -1,10 +1,10 @@
-; fat32_pbr.asm — bootrec FAT32 Partition Boot Record.
+; fat32_pbr.asm — mkmsbr FAT32 Partition Boot Record.
 ;
 ; Loaded by the MBR at 0000:7C00 in real mode, with DL = boot drive.
 ;
 ; Layout:
 ;   bytes  0..2   = JMP short body / NOP
-;   bytes  3..89  = BPB (RUNTIME data; preserved by bootrec::pbr::
+;   bytes  3..89  = BPB (RUNTIME data; preserved by mkmsbr::pbr::
 ;                   splice_fat32_pbr from the freshly-formatted partition)
 ;   bytes 90..509 = boot code
 ;   bytes 510..511= 0x55 0xAA

@@ -6,7 +6,7 @@
 ;   - Loaded by our FAT32 PBR at some real-mode segment:offset (Microsoft's
 ;     PBR uses 2000:0; the contract is "wherever the PBR jumps to, we
 ;     start here").
-;   - Prints "BOOTREC OK\n" via two channels:
+;   - Prints "MKMSBR OK\n" via two channels:
 ;       * BIOS teletype (INT 10h, AH=0Eh) - visible if QEMU runs with
 ;         a graphical display.
 ;       * Serial port COM1 (port 0x3F8) - captured by QEMU's
@@ -42,4 +42,4 @@ start:
     hlt
     jmp .hang
 
-msg: db 'BOOTREC OK', 13, 10, 0
+msg: db 'MKMSBR OK', 13, 10, 0

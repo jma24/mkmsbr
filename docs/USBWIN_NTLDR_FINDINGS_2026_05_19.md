@@ -1,22 +1,22 @@
 # NTLDR PBR findings from usbwin XP integration — 2026-05-19
 
-Hardware-test failures surfaced two bootrec-side bugs during usbwin's
+Hardware-test failures surfaced two mkmsbr-side bugs during usbwin's
 first attempt at booting a Windows XP install USB on the reference
 legacy-BIOS rig (Dell E6410).
 
-The setup: `usbwin --type windows-xp --boot-record bootrec` produced
+The setup: `usbwin --type windows-xp --boot-record mkmsbr` produced
 a USB that, on boot, displays "`2_`" (literal '2' top-left + cursor)
 and halts. The diagnostic '2' is recognizable from this repo's PBR
 error-printer convention (stage-2 read failure marker).
 
-Hex dumps of the resulting USB are at `/tmp/xp_bootrec_pbr.hex` on the
+Hex dumps of the resulting USB are at `/tmp/xp_mkmsbr_pbr.hex` on the
 user's machine; the relevant findings reproduced inline below.
 
 ## Bug 1 — `splice_fat32_pbr` (NTLDR variant) does not overwrite OEM ID
 
 The on-disk PBR sector 0, bytes 3..10 (OEM ID), are `BSD  4.4` — the
 default left by macOS `newfs_msdos`. ms-sys's `--fat32nt` overwrites
-these bytes with `MSWIN4.1`; bootrec's `splice_fat32_pbr` preserves
+these bytes with `MSWIN4.1`; mkmsbr's `splice_fat32_pbr` preserves
 them.
 
 Inconsistent with the BOOTMGR (multi-sector) splice, which per this
@@ -58,7 +58,7 @@ The user reports seeing `'2_'` (just the '2' and the cursor), so:
 - '2' prints
 - Diagnostic halts
 
-The Dell E6410 supports LBA-ext fine (bootrec's BOOTMGR PBR on
+The Dell E6410 supports LBA-ext fine (mkmsbr's BOOTMGR PBR on
 identical hardware boots Win 7 without trouble via the same fn 0x42).
 So the read failure isn't an LBA-ext-rejection story like the 2005
 Phoenix Award P4.
@@ -79,7 +79,7 @@ Candidate causes, in order of suspicion:
    accidentally `0x18`.
 3. **es:di buffer overlap.** Buffer destination is `0x0000:0x0500`.
    The relocated MBR copy on macOS pipelines lives at `0x061b..0x07ff`
-   (ms-sys MBR) but our bootrec MBR lives at `0x0600..0x07ff`. If the
+   (ms-sys MBR) but our mkmsbr MBR lives at `0x0600..0x07ff`. If the
    DAP buffer at `0x0500` overlaps the relocated MBR's data, the
    read can succeed but trash a critical structure. Note: the read
    *failed* (CF=1) so this is less likely the cause but worth ruling
@@ -131,10 +131,10 @@ usbwin is shipping a separate fix to its XP `--boot-record=ms-sys`
 path: don't run `ms-sys --mbr` for XP mode (its XP-era boot code
 hardcodes drive 0x80 instead of preserving the BIOS-supplied DL,
 which fails on E6410-style USB-HDD emulation). usbwin will use
-bootrec's MBR for both XP backends; only the PBR backend is selected
+mkmsbr's MBR for both XP backends; only the PBR backend is selected
 by the `--boot-record` flag.
 
 This is an unrelated bug from the same hardware-test session, fixed
 independently in the usbwin tree. Filed here for awareness because
 it influences which combinations of (MBR backend × PBR backend) are
-worth testing as ms-sys / bootrec each evolve.
+worth testing as ms-sys / mkmsbr each evolve.

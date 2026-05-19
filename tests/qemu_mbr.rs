@@ -1,4 +1,4 @@
-//! Layer-2 QEMU smoke test for `bootrec::mbr_xp`.
+//! Layer-2 QEMU smoke test for `mkmsbr::mbr_xp`.
 //!
 //! Ignored by default. Run with:
 //!
@@ -9,15 +9,15 @@
 //!   - `qemu-system-i386` to boot the image.
 //!
 //! Flow:
-//!   1. Build the fake PBR (NASM, prints "BOOTREC MBR OK\r\n" to COM1, halts).
+//!   1. Build the fake PBR (NASM, prints "MKMSBR MBR OK\r\n" to COM1, halts).
 //!   2. Allocate a 4 MiB raw disk image, zero-filled.
-//!   3. Write `bootrec::mbr_xp(8192)` to sector 0 (8192-sector image, so
+//!   3. Write `mkmsbr::mbr_xp(8192)` to sector 0 (8192-sector image, so
 //!      the partition covers LBA 2048..8192 = 6144 sectors).
 //!   4. Write `fake_pbr.bin` at LBA 2048 (the partition start).
 //!   5. Boot under qemu-system-i386 with `-drive if=ide -serial stdio`.
-//!   6. Pass if serial output contains "BOOTREC MBR OK".
+//!   6. Pass if serial output contains "MKMSBR MBR OK".
 //!
-//! Contract proven on pass: bootrec's MBR correctly relocates itself,
+//! Contract proven on pass: mkmsbr's MBR correctly relocates itself,
 //! scans the partition table, reads the active partition's first sector
 //! via INT 13h ext, validates the signature, and chain-loads.
 
@@ -32,14 +32,14 @@ const PARTITION_LBA: u64 = 2048; // matches PARTITION_START_LBA
 #[test]
 #[ignore]
 fn mbr_xp_chainloads_active_partition_in_qemu() {
-    let mbr = bootrec::mbr_xp(DISK_SECTORS).expect("mbr_xp");
+    let mbr = mkmsbr::mbr_xp(DISK_SECTORS).expect("mbr_xp");
     assert_chainload(&mbr, "mbr_xp");
 }
 
 #[test]
 #[ignore]
 fn mbr_win7_chainloads_active_partition_in_qemu() {
-    let mbr = bootrec::mbr_win7(DISK_SECTORS).expect("mbr_win7");
+    let mbr = mkmsbr::mbr_win7(DISK_SECTORS).expect("mbr_win7");
     assert_chainload(&mbr, "mbr_win7");
 }
 
@@ -49,7 +49,7 @@ fn assert_chainload(mbr: &[u8; 512], variant: &str) {
         return;
     }
 
-    if bootrec::MBR_XP_BOOT.is_empty() {
+    if mkmsbr::MBR_XP_BOOT.is_empty() {
         panic!(
             "MBR blobs are empty (built without --features embed-boot-asm). \
              Re-run: cargo test --test qemu_mbr --features embed-boot-asm -- --ignored"
@@ -60,13 +60,13 @@ fn assert_chainload(mbr: &[u8; 512], variant: &str) {
     let fake_pbr = build_fake_pbr(&boot_asm).expect("building fake_pbr.bin");
 
     let tmp = tempdir();
-    let image = tmp.join(format!("bootrec-{variant}.img"));
+    let image = tmp.join(format!("mkmsbr-{variant}.img"));
     create_image(&image, mbr, &fake_pbr).expect("creating disk image");
 
     let serial = boot_under_qemu(&image).expect("running qemu");
     assert!(
-        serial.contains("BOOTREC MBR OK"),
-        "[{variant}] qemu serial missing 'BOOTREC MBR OK'. Got:\n---\n{serial}\n---"
+        serial.contains("MKMSBR MBR OK"),
+        "[{variant}] qemu serial missing 'MKMSBR MBR OK'. Got:\n---\n{serial}\n---"
     );
 }
 
@@ -163,7 +163,7 @@ fn boot_under_qemu(image: &Path) -> Result<String, String> {
 }
 
 fn tempdir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("bootrec-mbr-qemu-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("mkmsbr-mbr-qemu-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

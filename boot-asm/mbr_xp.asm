@@ -1,4 +1,4 @@
-; mbr_xp.asm — bootrec Master Boot Record, Windows 2000/XP/2003 variant.
+; mbr_xp.asm — mkmsbr Master Boot Record, Windows 2000/XP/2003 variant.
 ;
 ; Spec-compliance map (clean-room — see docs/PROVENANCE.md):
 ;   - INT 13h fn 0x42 (LBA): Phoenix BIOS Interface Reference
@@ -24,7 +24,7 @@
 ;   5. Far-jump to 0000:7C00 to chain-load the PBR.
 ;
 ; Output: exactly 512 bytes. Bytes 446..509 are the partition table
-; (zeroed by nasm; written by bootrec at install time). Bytes
+; (zeroed by nasm; written by mkmsbr at install time). Bytes
 ; 510..511 = 0x55 0xAA.
 
 BITS 16
@@ -151,7 +151,7 @@ dap:
 ; Pad to the partition table location (offset 0x1BE = 446).
     times 446 - ($ - $$) db 0
 
-; Partition table: 4 × 16-byte entries, zeroed. bootrec writes the
+; Partition table: 4 × 16-byte entries, zeroed. mkmsbr writes the
 ; real partition entries during pipeline execution.
     times 64 db 0
 

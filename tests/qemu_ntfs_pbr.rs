@@ -11,7 +11,7 @@
 //!     an ephemeral Alpine container with ntfs-3g-progs installed)
 //!
 //! Flow:
-//!   1. Build `fake_bootmgr.bin` (prints "BOOTREC OK\n" to COM1, halts),
+//!   1. Build `fake_bootmgr.bin` (prints "MKMSBR OK\n" to COM1, halts),
 //!      then pad to 2 KiB so NTFS stores its DATA attribute non-resident
 //!      (resident DATA is unsupported by the current PBR — see
 //!      boot-asm/ntfs_pbr_bootmgr/sector1.asm error code 'D').
@@ -23,7 +23,7 @@
 //!      the formatter's LBA 1), write the spliced 2048 bytes back over
 //!      sectors 0..3 (stage 2 now lives at LBA 2..3).
 //!   5. Boot the raw image under `qemu-system-i386 -serial stdio`.
-//!   6. Pass if the serial output contains "BOOTREC OK".
+//!   6. Pass if the serial output contains "MKMSBR OK".
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -40,7 +40,7 @@ fn ntfs_pbr_bootmgr_multi_chainloads_in_qemu() {
         return;
     }
 
-    let blob = bootrec::NTFS_PBR_BOOTMGR_MULTI_BOOT;
+    let blob = mkmsbr::NTFS_PBR_BOOTMGR_MULTI_BOOT;
     assert!(
         !blob.is_empty(),
         "NTFS PBR blob is empty (built without --features embed-boot-asm). \
@@ -56,14 +56,14 @@ fn ntfs_pbr_bootmgr_multi_chainloads_in_qemu() {
     let fake_loader = build_padded_fake_bootmgr(&boot_asm).expect("building padded fake_bootmgr");
 
     let tmp = tempdir();
-    let image = tmp.join("bootrec-ntfs-pbr.img");
+    let image = tmp.join("mkmsbr-ntfs-pbr.img");
     create_ntfs_image(&image, &fake_loader).expect("creating NTFS image");
     splice_our_pbr(&image, blob).expect("splicing NTFS PBR");
 
     let serial = boot_under_qemu(&image).expect("running qemu");
     assert!(
-        serial.contains("BOOTREC OK"),
-        "qemu serial missing 'BOOTREC OK'. Got:\n---\n{serial}\n---"
+        serial.contains("MKMSBR OK"),
+        "qemu serial missing 'MKMSBR OK'. Got:\n---\n{serial}\n---"
     );
 }
 
@@ -175,7 +175,7 @@ fn splice_our_pbr(image: &Path, blob: &[u8]) -> Result<(), String> {
     let mut existing = [0u8; 1024];
     file.read_exact(&mut existing)
         .map_err(|e| format!("reading existing PBR + LBA 1: {e}"))?;
-    let spliced = bootrec::splice_ntfs_pbr_multi(&existing, blob)
+    let spliced = mkmsbr::splice_ntfs_pbr_multi(&existing, blob)
         .map_err(|e| format!("splice_ntfs_pbr_multi: {e}"))?;
     file.seek(SeekFrom::Start(0))
         .map_err(|e| format!("seek: {e}"))?;
@@ -220,7 +220,7 @@ fn boot_under_qemu(image: &Path) -> Result<String, String> {
 }
 
 fn tempdir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("bootrec-ntfs-pbr-qemu-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("mkmsbr-ntfs-pbr-qemu-{}", std::process::id()));
     let _ = fs::create_dir_all(&dir);
     dir
 }

@@ -1,7 +1,7 @@
 //! Byte-equality eval against ms-sys.
 //!
 //! For each variant: prepare a freshly-formatted (or zero-filled) image,
-//! apply the ms-sys pipeline (branch A) and the bootrec pipeline (branch
+//! apply the ms-sys pipeline (branch A) and the mkmsbr pipeline (branch
 //! B) against *identical* starting images, read back the first N sectors
 //! of each, and report sector-by-sector byte differences.
 //!
@@ -15,8 +15,8 @@
 //!   * Always prints a full sector-by-sector summary so the developer
 //!     can read the structural differences regardless of pass/fail.
 //!   * **Fails** if any sector ms-sys writes non-trivially (>= 20
-//!     non-zero bytes) is left all-zero by bootrec. That's a verifiable
-//!     gap — ms-sys puts content on disk where bootrec puts nothing.
+//!     non-zero bytes) is left all-zero by mkmsbr. That's a verifiable
+//!     gap — ms-sys puts content on disk where mkmsbr puts nothing.
 //!
 //! Not a pure byte-equality test. Clean-room divergence in the boot-code
 //! regions (sector 0 offsets 0..3 + 90..510, sector 2 boot code, etc.)
@@ -50,7 +50,7 @@ fn fat32_pbr_bootmgr_multi_byte_diff_vs_mssys() {
         eprintln!("skipping: {e}");
         return;
     }
-    if bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT.is_empty() {
+    if mkmsbr::FAT32_PBR_BOOTMGR_MULTI_BOOT.is_empty() {
         panic!(
             "FAT32_PBR_BOOTMGR_MULTI_BOOT is empty — rebuild with --features embed-boot-asm"
         );
@@ -65,7 +65,7 @@ fn fat32_pbr_bootmgr_multi_byte_diff_vs_mssys() {
 
     oracle::run_ms_sys(&["--fat32pe", "-f"], &theirs)
         .expect("ms-sys --fat32pe on theirs.img");
-    apply_bootrec_fat32_pbr_multi(&ours).expect("bootrec splice on ours.img");
+    apply_mkmsbr_fat32_pbr_multi(&ours).expect("mkmsbr splice on ours.img");
 
     let theirs_bytes = read_first_n_sectors(&theirs, SECTORS_TO_COMPARE);
     let ours_bytes = read_first_n_sectors(&ours, SECTORS_TO_COMPARE);
@@ -81,9 +81,9 @@ fn fat32_pbr_bootmgr_multi_byte_diff_vs_mssys() {
     let gaps = report.gap_sectors(NZ_THRESHOLD_FOR_GAP);
     assert!(
         gaps.is_empty(),
-        "GAPS DETECTED: bootrec leaves sector(s) {:?} all-zero, but ms-sys writes non-trivial \
+        "GAPS DETECTED: mkmsbr leaves sector(s) {:?} all-zero, but ms-sys writes non-trivial \
          content there (>= {} non-zero bytes). These are verifiable gaps — content ms-sys \
-         puts on disk that bootrec doesn't. Run with --nocapture to see the per-sector report.",
+         puts on disk that mkmsbr doesn't. Run with --nocapture to see the per-sector report.",
         gaps,
         NZ_THRESHOLD_FOR_GAP,
     );
@@ -100,7 +100,7 @@ fn mbr_win7_byte_diff_vs_mssys() {
         eprintln!("skipping: {e}");
         return;
     }
-    if bootrec::MBR_WIN7_BOOT.is_empty() {
+    if mkmsbr::MBR_WIN7_BOOT.is_empty() {
         panic!("MBR_WIN7_BOOT is empty — rebuild with --features embed-boot-asm");
     }
 
@@ -108,7 +108,7 @@ fn mbr_win7_byte_diff_vs_mssys() {
     let theirs = dir.join("theirs.img");
     let ours = dir.join("ours.img");
 
-    // 16 MiB zero-filled image: large enough that bootrec::mbr_win7's
+    // 16 MiB zero-filled image: large enough that mkmsbr::mbr_win7's
     // partition table is well-formed; ms-sys doesn't care about size.
     let image_bytes: usize = 16 * 1024 * 1024;
     fs::write(&theirs, vec![0u8; image_bytes]).expect("seed theirs.img");
@@ -116,7 +116,7 @@ fn mbr_win7_byte_diff_vs_mssys() {
 
     oracle::run_ms_sys(&["--mbr7", "-f"], &theirs).expect("ms-sys --mbr7");
 
-    let mbr = bootrec::mbr_win7((image_bytes / SECTOR_SIZE) as u64).expect("bootrec::mbr_win7");
+    let mbr = mkmsbr::mbr_win7((image_bytes / SECTOR_SIZE) as u64).expect("mkmsbr::mbr_win7");
     write_sector0(&ours, &mbr).expect("write our MBR");
 
     // MBR is single-sector, so only compare sector 0.
@@ -131,7 +131,7 @@ fn mbr_win7_byte_diff_vs_mssys() {
          Region map:\n  \
          0x000..0x1B8 (0..440)   boot code         — clean-room divergence expected\n  \
          0x1B8..0x1BE (440..446) NT disk signature — both expected ZERO from a zero-fill start\n  \
-         0x1BE..0x1FE (446..510) partition table   — ms-sys preserves (zeroes); bootrec writes one FAT32-LBA active entry\n  \
+         0x1BE..0x1FE (446..510) partition table   — ms-sys preserves (zeroes); mkmsbr writes one FAT32-LBA active entry\n  \
          0x1FE..0x200 (510..512) boot signature    — both 0x55 0xAA\n",
         report
     );
@@ -143,7 +143,7 @@ fn mbr_win7_byte_diff_vs_mssys() {
     if theirs_sig != ours_sig {
         eprintln!(
             "NOTE: disk-signature region (0x1B8..0x1BE) differs:\n  \
-             ms-sys: {:02X?}\n  bootrec: {:02X?}",
+             ms-sys: {:02X?}\n  mkmsbr: {:02X?}",
             theirs_sig, ours_sig,
         );
     }
@@ -164,7 +164,7 @@ fn prepare_fat32_image(path: &Path) -> Result<(), String> {
     let out = std::process::Command::new("mformat")
         .args(["-F", "-i"])
         .arg(path)
-        .args(["-v", "BOOTREC", "::"])
+        .args(["-v", "MKMSBR", "::"])
         .output()
         .map_err(|e| format!("mformat: {e}"))?;
     if !out.status.success() {
@@ -176,7 +176,7 @@ fn prepare_fat32_image(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn apply_bootrec_fat32_pbr_multi(path: &Path) -> Result<(), String> {
+fn apply_mkmsbr_fat32_pbr_multi(path: &Path) -> Result<(), String> {
     let mut file = fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -185,7 +185,7 @@ fn apply_bootrec_fat32_pbr_multi(path: &Path) -> Result<(), String> {
     let mut existing = [0u8; 1024];
     file.read_exact(&mut existing)
         .map_err(|e| format!("read existing 1024 bytes: {e}"))?;
-    let spliced = bootrec::splice_fat32_pbr_multi(&existing, bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT)
+    let spliced = mkmsbr::splice_fat32_pbr_multi(&existing, mkmsbr::FAT32_PBR_BOOTMGR_MULTI_BOOT)
         .map_err(|e| format!("splice_fat32_pbr_multi: {e}"))?;
     file.seek(SeekFrom::Start(0))
         .map_err(|e| format!("seek: {e}"))?;
@@ -212,7 +212,7 @@ fn read_first_n_sectors(path: &Path, n: usize) -> Vec<u8> {
 
 fn tempdir(label: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
-        "bootrec-diff-{}-{}",
+        "mkmsbr-diff-{}-{}",
         label,
         std::process::id()
     ));

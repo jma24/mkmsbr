@@ -1,6 +1,6 @@
 # tests/ — eval framework
 
-Bootrec is developed eval-first: the verification harness exists before
+Mkmsbr is developed eval-first: the verification harness exists before
 each variant's boot-code implementation. See `docs/SPEC.md`
 §Verifiability hierarchy for the design and §Eval-first workflow for how
 to use it.
@@ -45,7 +45,7 @@ cargo test --test qemu_pbr_real --features embed-boot-asm -- --ignored
 
 The Layer-1 oracle searches for ms-sys in this order:
 
-1. `BOOTREC_MS_SYS` env var (full path).
+1. `MKMSBR_MS_SYS` env var (full path).
 2. `/tmp/ms-sys/bin/ms-sys`.
 3. `/usr/local/bin/ms-sys`.
 4. `/opt/homebrew/bin/ms-sys`.
@@ -71,7 +71,7 @@ The remaining `ntfs_pbr_bootmgr` variant has no eval coverage yet
 
 ## Clean-room boundary
 
-`tests/common/oracle.rs` is the only place ms-sys appears in the bootrec
+`tests/common/oracle.rs` is the only place ms-sys appears in the mkmsbr
 codebase, and only as a black-box subprocess. Library source files
 (`src/`) and boot-code source (`boot-asm/`) have no ms-sys awareness —
 they're derived from FAT32/NTFS specs and BIOS docs only. See

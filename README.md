@@ -1,4 +1,4 @@
-# bootrec
+# mkmsbr
 
 Clean-room Rust library (and CLI) for producing Microsoft-compatible boot
 records — MBR, FAT32 PBR, NTFS PBR — without depending on `ms-sys`. MIT
@@ -13,13 +13,13 @@ for the v1.0 plan and `docs/PROVENANCE.md` for the clean-room protocol.
 `ms-sys` is the only widely-available source of correct Windows boot-record
 bytes outside of Windows itself, but:
 
-- It's GPL-2; bootrec is MIT, so consumers get a cleaner license story.
+- It's GPL-2; mkmsbr is MIT, so consumers get a cleaner license story.
 - It's distributed as source, with build-it-yourself friction.
 - Its boot-code blobs in `inc/*.h` are themselves derived from Microsoft
   binaries — a long-running legal grey area that a from-the-spec
   reimplementation sidesteps.
 
-bootrec is built **eval-first**: the verification harness (ms-sys-as-oracle
+mkmsbr is built **eval-first**: the verification harness (ms-sys-as-oracle
 + QEMU boot smoke + real-content boot + real hardware) is written before
 the boot code. A variant ships when its eval passes. See
 `docs/SPEC.md` §Verifiability hierarchy.
@@ -28,21 +28,21 @@ the boot code. A variant ships when its eval passes. See
 
 ```rust
 // Master Boot Records (whole-disk).
-bootrec::mbr_win7(geometry, partitions) -> [u8; 512];
-bootrec::mbr_xp(geometry, partitions)   -> [u8; 512];
+mkmsbr::mbr_win7(geometry, partitions) -> [u8; 512];
+mkmsbr::mbr_xp(geometry, partitions)   -> [u8; 512];
 
 // FAT32 Partition Boot Records (multi-sector). Both use CHS reads
 // for compatibility with USB-FDD-emulating BIOSes; the single-sector
 // fat32_pbr_bootmgr variant ships only as a smoke-test baseline.
-bootrec::fat32_pbr_ntldr(bpb)   -> PbrBytes;   // 3 sectors (XP/2003)
-bootrec::fat32_pbr_bootmgr(bpb) -> PbrBytes;   // 3 sectors (Win 7+)
+mkmsbr::fat32_pbr_ntldr(bpb)   -> PbrBytes;   // 3 sectors (XP/2003)
+mkmsbr::fat32_pbr_bootmgr(bpb) -> PbrBytes;   // 3 sectors (Win 7+)
 
 // NTFS Partition Boot Record (multi-sector).
-bootrec::ntfs_pbr_bootmgr(bpb)  -> PbrBytes;
+mkmsbr::ntfs_pbr_bootmgr(bpb)  -> PbrBytes;
 
 // XP-Setup BOOTSECT.DAT chain loader. Single sector that NTLDR
 // chainloads to load $LDR$ from pre-resolved LBA runs.
-bootrec::build_xp_setup_chain_bootsect(
+mkmsbr::build_xp_setup_chain_bootsect(
     formatter_sector0, target_segment, runs,
 ) -> [u8; 512];
 ```
@@ -139,12 +139,12 @@ The L3 harness boots a FAT32 image with the real loader file under
 qemu-system-i386, records `blk_co_preadv` trace events, and passes if
 the recorded read count exceeds the threshold — strong evidence the
 real loader took over from our PBR rather than the PBR halting first.
-Set `BOOTREC_L3_MIN_READS=<n>` to override the default threshold.
+Set `MKMSBR_L3_MIN_READS=<n>` to override the default threshold.
 Tests skip gracefully if fixtures are absent.
 
 ## Clean-room
 
-bootrec is developed under a strict clean-room protocol — contributors
+mkmsbr is developed under a strict clean-room protocol — contributors
 working on boot code may not have read ms-sys's source files (`src/*.c`,
 `inc/*.h`) or any other open-source bootloader's source. See
 `docs/PROVENANCE.md` for the full protocol and `docs/SPEC.md` §Clean-room

@@ -1,6 +1,6 @@
 ; fake_pbr.asm — fake Partition Boot Record for MBR smoke test.
-; Loaded by bootrec's MBR at 0000:7C00 with DL = boot drive.
-; Prints "BOOTREC MBR OK\r\n" to BIOS teletype + COM1 then halts.
+; Loaded by mkmsbr's MBR at 0000:7C00 with DL = boot drive.
+; Prints "MKMSBR MBR OK\r\n" to BIOS teletype + COM1 then halts.
 ; Must be exactly 512 bytes with 0xAA55 signature at offset 510
 ; (the MBR validates the signature before chain-loading).
 ;
@@ -39,7 +39,7 @@ start:
     hlt
     jmp .hang
 
-msg: db 'BOOTREC MBR OK', 13, 10, 0
+msg: db 'MKMSBR MBR OK', 13, 10, 0
 
     times 510 - ($ - $$) db 0
     dw 0xAA55

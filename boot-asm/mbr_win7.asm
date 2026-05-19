@@ -1,4 +1,4 @@
-; mbr_win7.asm — bootrec Master Boot Record, Windows 7/8/10/11 variant.
+; mbr_win7.asm — mkmsbr Master Boot Record, Windows 7/8/10/11 variant.
 ;
 ; Spec-compliance map (clean-room — see docs/PROVENANCE.md):
 ;   - INT 13h fn 0x42 (LBA): Phoenix BIOS Interface Reference
@@ -27,7 +27,7 @@
 ;   7. Far-jump to 0:7C00 with DL preserved.
 ;
 ; Output: exactly 512 bytes. Bytes 446..509 are the partition table
-; (zeroed by nasm; written by bootrec at install time). Bytes 510..511
+; (zeroed by nasm; written by mkmsbr at install time). Bytes 510..511
 ; = 0x55 0xAA.
 
 BITS 16
@@ -39,7 +39,7 @@ start:
     ; since the DOS era; some 2000s-era BIOSes pattern-match byte 0 of
     ; the boot sector as part of USB enumeration to choose USB-HDD vs
     ; USB-FDD emulation. Empirically necessary on a 2005-vintage P4
-    ; where bootrec MBR with byte 0 = 0xFA (cli) was forced into
+    ; where mkmsbr MBR with byte 0 = 0xFA (cli) was forced into
     ; USB-FDD mode regardless of strings/disk-signature presence.
     db 0x33, 0xC0           ; xor ax, ax
     mov ss, ax              ; mov-to-SS auto-defers interrupts to next instr,
@@ -175,7 +175,7 @@ msft_str_missing:    db 'Missing operating system', 0
 ; Pad to the partition table location (offset 0x1BE = 446).
     times 446 - ($ - $$) db 0
 
-; Partition table: 4 × 16-byte entries, zeroed. bootrec writes the
+; Partition table: 4 × 16-byte entries, zeroed. mkmsbr writes the
 ; real partition entries during pipeline execution.
     times 64 db 0
 

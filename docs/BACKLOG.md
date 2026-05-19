@@ -1,4 +1,4 @@
-# bootrec v1.0 backlog
+# mkmsbr v1.0 backlog
 
 Where we are vs. what `docs/SPEC.md` calls v1.0. Internal-honest tone:
 "shipped" means the eval gates the spec required for that row are
@@ -80,14 +80,14 @@ The multi-sector variant is the v1.0 target (`docs/SPEC.md` line 132).
   there — no semantic risk).
 - **L4 real-hardware verification — failing 2026-05-19.** Dell E6410 +
   2010-2015 Intel desktop + 2005-vintage P4 setup did not boot from a
-  bootrec-built USB. Mode of failure not yet pinpointed; "Byte-diff
+  mkmsbr-built USB. Mode of failure not yet pinpointed; "Byte-diff
   findings vs ms-sys" lists the candidates. *Blocks: spec L4 target /
   1.0 release.*
 
 ### Byte-diff findings vs ms-sys (2026-05-19)
 
 `tests/byte_diff_vs_mssys.rs` (added 2026-05-19) runs ms-sys and
-bootrec pipelines against identical freshly-formatted FAT32 images,
+mkmsbr pipelines against identical freshly-formatted FAT32 images,
 reads back the first 16 sectors of each, and reports byte
 differences. First-run results:
 
@@ -159,7 +159,7 @@ Other candidates, ranked by current weight of evidence:
   count gap is the failure signal.
 
 **Next-step priorities:**
-- Add LBA 12 stage-3 helpers to bootrec's multi-sector blob (closes
+- Add LBA 12 stage-3 helpers to mkmsbr's multi-sector blob (closes
   the high-confidence gap). Likely a `sector12.asm` sibling, splice
   writes 13 sectors total (LBA 0..12) with zeros at the unused
   intermediate offsets.
@@ -225,7 +225,7 @@ Other candidates, ranked by current weight of evidence:
 |-------------------------------------|--------------------|--------|
 | Layer 1 oracle (ms-sys subprocess)  | §Verifiability     | ✓ MBR + PBR sector 0 |
 | Layer 1 oracle for multi-sector PBR | §Verifiability     | ✓ — ms-sys populates sectors 0,1,2,6,12; best stage-2 match Hamming 378/512 |
-| Byte-diff eval vs ms-sys            | §Verifiability     | ✓ `tests/byte_diff_vs_mssys.rs` (2026-05-19) — gap detection on sectors ms-sys writes but bootrec doesn't |
+| Byte-diff eval vs ms-sys            | §Verifiability     | ✓ `tests/byte_diff_vs_mssys.rs` (2026-05-19) — gap detection on sectors ms-sys writes but mkmsbr doesn't |
 | Layer 2 QEMU harness (FAT32 PBR)    | §Eval-first        | ✓ single + multi |
 | Layer 2 QEMU harness (MBR)          | §Eval-first        | ✓ both variants |
 | Layer 2 QEMU harness (NTFS)         | §Eval-first        | ✓ `tests/qemu_ntfs_pbr.rs` (Docker mkfs.ntfs + ntfscp fixture) |
@@ -247,10 +247,10 @@ Other candidates, ranked by current weight of evidence:
 | GitHub Actions workflow             | Run clean_room_check + cargo test on every PR              | TODO |
 | Layer 1/2 in CI (ignored gate)      | Needs nasm + qemu + mtools + ms-sys on runner              | TODO |
 | Layer 3 in CI                       | Depends on fixture-build infrastructure                    | TODO |
-| CLI binary (`src/bin/bootrec.rs`)   | Clap wrapper, ms-sys flag aliases (§Form factor)           | TODO |
+| CLI binary (`src/bin/mkmsbr.rs`)   | Clap wrapper, ms-sys flag aliases (§Form factor)           | TODO |
 | Cargo features clean-up             | `embed-boot-asm` default-on once stable                    | TODO |
 | `crates.io` publish                 | Reserve name; first release                                | TODO |
-| Homebrew formula                    | `brew install bootrec` (§Audience and packaging)           | TODO |
+| Homebrew formula                    | `brew install mkmsbr` (§Audience and packaging)           | TODO |
 | README user-install instructions    | Polished install + usage section                           | TODO |
 
 ## Clean-room process
@@ -297,7 +297,7 @@ Other candidates, ranked by current weight of evidence:
   variants (`ntfs_pbr_bootmgr`, multi-sector L3 against real BOOTMGR) are
   expected to take longer because of unknown filesystem/contract details.
 - v1.0 ship date is gated by L4 (real hardware) — the user runs that
-  pipeline; everything else is bootrec-side work.
+  pipeline; everything else is mkmsbr-side work.
 - **L3 signal detection — resolved.** `qemu -trace blk_co_preadv,file=…`
   produces one line per guest read; counting lines and gating > 50 cleanly
   separates "PBR halted before chainload" (single- to double-digit reads
@@ -362,7 +362,7 @@ Other candidates, ranked by current weight of evidence:
   state there is no standard for BIOS USB enumeration mode selection
   (RMPrepUSB tutorial 027, OSDev forum). **Decision for v0.2/v0.3:
   usbwin pipeline invokes `ms-sys --mbr7` as the MBR step regardless
-  of `--boot-record` flag; the bootrec MBR is shipped as a fallback
+  of `--boot-record` flag; the mkmsbr MBR is shipped as a fallback
   for modern BIOSes that don't need the Microsoft fingerprint.** Full
   clean-room MBR rewrite (mirroring ms-sys's instruction sequence
   while staying defensible — those operations are standard for any
@@ -388,7 +388,7 @@ Other candidates, ranked by current weight of evidence:
   - `tests/byte_diff_vs_mssys.rs` (added as part of the L1 oracle
     work earlier in the day) tracked + passing.
 
-- **Win 7 boots on real hardware** with bootrec PBR + ms-sys MBR
+- **Win 7 boots on real hardware** with mkmsbr PBR + ms-sys MBR
   fallback. Verified 2026-05-19 on a 2005-vintage Phoenix Award BIOS
   P4 target.
 
@@ -417,7 +417,7 @@ Other candidates, ranked by current weight of evidence:
 
   Renames: `FAT32_PBR_NTLDR_BOOT` → `FAT32_PBR_NTLDR_MULTI_BOOT`.
 
-- **XP Setup chain — bootrec primitive shipped 2026-05-19 (late).** New
+- **XP Setup chain — mkmsbr primitive shipped 2026-05-19 (late).** New
   `build_xp_setup_chain_bootsect(formatter_sector0, target_segment,
   runs: &[LbaRun]) -> [u8; 512]`. Builds a single-sector BOOTSECT.DAT
   that NTLDR chainloads via boot.ini's bootsector-entry mechanism;
@@ -429,7 +429,7 @@ Other candidates, ranked by current weight of evidence:
   integration tracked in `docs/USBWIN_NTLDR_FINDINGS_2026_05_19.md`.
 
 - **XP L4 — BOOTSECT.DAT chain still pending on usbwin side.** The
-  bootrec primitive ships ready. Downstream chain (NTLDR loads
+  mkmsbr primitive ships ready. Downstream chain (NTLDR loads
   BOOTSECT.DAT → BOOTSECT.DAT loads `$LDR$` → text-mode setup) needs
   usbwin to walk FAT for `$LDR$`, coalesce extents into LbaRuns, call
   the new primitive, and write the result. Confirmed-failing state
@@ -441,8 +441,8 @@ Other candidates, ranked by current weight of evidence:
 - **Next session candidates:**
   1. ~~Wire up the operational fallback in usbwin (always invoke
      `ms-sys --mbr7` for Win 7 mode).~~ Landed already; usbwin now
-     uses bootrec MBR for Win 7 + XP and ms-sys MBR fallback was
-     deemed unnecessary once bootrec's MBR byte-matching was tried.
+     uses mkmsbr MBR for Win 7 + XP and ms-sys MBR fallback was
+     deemed unnecessary once mkmsbr's MBR byte-matching was tried.
   2. `mbr_win7_with_signature(disk_sectors, sig: u32)` API in
      `src/mbr.rs`, replacing the hardcoded 0xDEADBEEF test value.
      usbwin generates a per-USB random signature and threads it
@@ -468,6 +468,6 @@ Other candidates, ranked by current weight of evidence:
      structure where defensible. Argue in PROVENANCE that the
      resulting byte-similarity is a property of the constrained task,
      not derivation.
-  9. CI / packaging push (GitHub Actions workflow, `src/bin/bootrec.rs`,
+  9. CI / packaging push (GitHub Actions workflow, `src/bin/mkmsbr.rs`,
      README install section, crates.io reservation) — none of which
-     individually need bootrec internals knowledge.
+     individually need mkmsbr internals knowledge.

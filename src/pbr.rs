@@ -245,7 +245,7 @@ pub fn splice_fat32_pbr_multi(existing: &[u8], blob: &[u8]) -> Result<Vec<u8>, P
     // on what they find. Anything non-"MSWIN" keeps them in USB-FDD mode
     // and our reads of partition LBA 2+ fail with AH=01 because effective
     // addressable space ends mid-partition. Confirmed empirically on a
-    // 2005-vintage P4 BIOS where bootrec-built USB with newfs_msdos's
+    // 2005-vintage P4 BIOS where mkmsbr-built USB with newfs_msdos's
     // "BSD  4.4" OEM gave R01120200 (USB-FDD, drive=0x00, geom 80/2/18),
     // while the same hardware booted an ms-sys-built USB (OEM "MSWIN4.1")
     // without issue. See docs/BACKLOG.md "Byte-diff findings vs ms-sys".

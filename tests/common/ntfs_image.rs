@@ -8,7 +8,7 @@
 //!
 //! Container: `alpine:latest` with `ntfs-3g-progs` apk-installed at
 //! first run. The package install adds ~10s on cold start; warm runs
-//! complete in ~1s. Override the image name with `BOOTREC_NTFS_IMAGE`.
+//! complete in ~1s. Override the image name with `MKMSBR_NTFS_IMAGE`.
 
 use std::path::Path;
 use std::process::Command;
@@ -40,10 +40,10 @@ pub fn docker_status() -> DockerStatus {
 }
 
 /// Allocate a `size_bytes`-sized raw file at `path` and format it as
-/// NTFS via `mkfs.ntfs -F -Q -L BOOTREC` inside a Docker container.
+/// NTFS via `mkfs.ntfs -F -Q -L MKMSBR` inside a Docker container.
 ///
 /// `-F` forces mkfs.ntfs to accept a regular file (it normally wants a
-/// block device); `-Q` is quick-format (no bad-block scan); `-L BOOTREC`
+/// block device); `-Q` is quick-format (no bad-block scan); `-L MKMSBR`
 /// sets the volume label so the resulting BPB is recognisable in xxd.
 ///
 /// On exit, `path` is a valid NTFS volume image:
@@ -72,7 +72,7 @@ pub fn mkfs_ntfs(path: &Path, size_bytes: u64) -> Result<(), String> {
     f.write_all(&[0]).map_err(|e| format!("write: {e}"))?;
     drop(f);
 
-    let image = std::env::var("BOOTREC_NTFS_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE.to_string());
+    let image = std::env::var("MKMSBR_NTFS_IMAGE").unwrap_or_else(|_| DEFAULT_IMAGE.to_string());
 
     // Run mkfs.ntfs inside the container. The host directory is
     // bind-mounted at /work, so the container writes to a path the host
@@ -86,7 +86,7 @@ pub fn mkfs_ntfs(path: &Path, size_bytes: u64) -> Result<(), String> {
     let mount = format!("{}:/work", parent.display());
     let cmd = format!(
         "apk add --no-cache --quiet ntfs-3g-progs >/dev/null && \
-         mkfs.ntfs -F -Q -L BOOTREC /work/{} >/dev/null",
+         mkfs.ntfs -F -Q -L MKMSBR /work/{} >/dev/null",
         file_name.to_string_lossy()
     );
 

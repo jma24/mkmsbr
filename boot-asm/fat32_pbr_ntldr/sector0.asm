@@ -22,7 +22,7 @@
 ; leaves LBA 1 alone and places stage-2 code at LBA 2. We mirror that.
 ;
 ; The BPB at offsets 3..89 is filesystem state, spliced by
-; bootrec::splice_fat32_pbr_multi from the existing freshly-formatted
+; mkmsbr::splice_fat32_pbr_multi from the existing freshly-formatted
 ; partition.
 ;
 ; Identical in structure to fat32_pbr_bootmgr/sector0.asm — only the

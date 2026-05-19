@@ -1,6 +1,6 @@
 # Spec request from usbwin — `build_xp_setup_chain_bootsect`
 
-This is a request for a new bootrec public function. usbwin needs it to
+This is a request for a new mkmsbr public function. usbwin needs it to
 finish the WinSetupFromUSB XP boot chain. Without it, the chain breaks
 at the "BOOTSECT.DAT loads `$LDR$`" step and NTLDR falls through to its
 default Windows-load path → classic
@@ -23,15 +23,15 @@ work of finding and loading `$LDR$` (a 5-char-renamed copy of
 
 The naïve approach — patch a copy of the partition's PBR with
 `NTLDR` → `$LDR$` — worked historically for single-sector PBRs that
-embedded the filename string in sector 0. bootrec's current
+embedded the filename string in sector 0. mkmsbr's current
 `fat32_pbr_ntldr` is multi-sector (per the 2026-05-19 CHS rewrite) and
 puts the literal `NTLDR` filename string at offset 0x5D0 (sector 2 /
 stage 2), unreachable from a single-sector BOOTSECT.DAT load. So the
-patch-the-PBR approach can't work for bootrec's PBR.
+patch-the-PBR approach can't work for mkmsbr's PBR.
 
 The clean fix: usbwin walks FAT in advance (already implemented in
 `crates/usbwin/src/pipeline/fat32.rs`), finds `$LDR$`'s LBAs, and hands
-them to a bootrec function that emits a single-sector loader. The loader
+them to a mkmsbr function that emits a single-sector loader. The loader
 doesn't need a FAT walker, doesn't need a filename string — it just
 CHS-reads pre-resolved LBAs and jumps. That fits in 512 bytes with room
 to spare.
@@ -184,7 +184,7 @@ heads:   db 0
 Stage-2 fits comfortably in ~256 bytes of code + 6×N bytes of run
 table. Standard error printing adds maybe 60 bytes. Plenty of room.
 
-## Why this matches existing bootrec patterns
+## Why this matches existing mkmsbr patterns
 
 The CHS-read + geometry-probe + error-print scaffolding is the same shape
 that `boot-asm/fat32_pbr_bootmgr/sector{0,1}.asm` already uses after
@@ -217,11 +217,11 @@ fallback (count > N), but the marker-string gate is tighter.
 
 ## What usbwin will do with this
 
-Once bootrec ships this, usbwin's `pipeline/xp_staging.rs` will gain a
+Once mkmsbr ships this, usbwin's `pipeline/xp_staging.rs` will gain a
 new code path:
 
 ```rust
-match bootrec::build_xp_setup_chain_bootsect(
+match mkmsbr::build_xp_setup_chain_bootsect(
     &formatter_sector0_array,
     0x2000,
     &runs,
@@ -229,7 +229,7 @@ match bootrec::build_xp_setup_chain_bootsect(
     Ok(bytes) => xp_staging::write_bootsect_dat(&usb_mount, &bytes)?,
     Err(e) => {
         // Fall back to the existing patch-PBR approach (works for
-        // ms-sys --fat32nt PBR; fails for bootrec NTLDR multi).
+        // ms-sys --fat32nt PBR; fails for mkmsbr NTLDR multi).
         // Eventually retire the fallback once this is the canonical path.
         ...
     }

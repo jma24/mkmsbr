@@ -2,13 +2,13 @@
 ;
 ; Body at offset 0x54, after JMP + 8-byte OEM "NTFS    " + NTFS BPB +
 ; Extended BPB (bytes 0x0B..0x53; spliced by
-; bootrec::splice_ntfs_pbr_multi from the freshly-formatted partition).
+; mkmsbr::splice_ntfs_pbr_multi from the freshly-formatted partition).
 ;
 ; Job: read stage 2 (2 sectors) from disk LBA = HiddSec + 2 into 0:7E00
 ; via INT 13h ext fn 0x42, far-JMP 0x0000:0x7E00. DL = boot drive
 ; preserved through the call.
 ;
-; Why LBA+2 and not LBA+1: keeps bootrec's NTFS PBR layout parallel with
+; Why LBA+2 and not LBA+1: keeps mkmsbr's NTFS PBR layout parallel with
 ; its FAT32 PBR (which must avoid LBA+1 = FSInfo). For NTFS the choice
 ; is cosmetic — sectors 0..15 are all reserved by $Boot — but matching
 ; layouts reduces splice-site special-casing in callers.

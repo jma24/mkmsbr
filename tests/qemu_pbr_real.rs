@@ -10,7 +10,7 @@
 //!     the ntldr test, Win 7 ISO for the bootmgr-multi test). Tests skip
 //!     gracefully if the corresponding fixtures are absent.
 //!
-//! Pass criterion. Unlike Layer 2 (which gates on a "BOOTREC OK" string
+//! Pass criterion. Unlike Layer 2 (which gates on a "MKMSBR OK" string
 //! the fake loader emits over COM1), real NTLDR / bootmgr don't speak to
 //! the serial port. Instead we record block-device read events via QEMU's
 //! `-trace` subsystem and gate on the count. Empirical floor:
@@ -23,7 +23,7 @@
 //!     own further reads on top.
 //!
 //! `L3_READ_THRESHOLD` is set conservatively. Override with the env var
-//! `BOOTREC_L3_MIN_READS` after observing real numbers on your platform.
+//! `MKMSBR_L3_MIN_READS` after observing real numbers on your platform.
 
 mod common;
 
@@ -38,7 +38,7 @@ const BOOT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Conservative default — well above any error-halt-path read count, well
 /// below the read count of even a partial successful chainload. Override
-/// with `BOOTREC_L3_MIN_READS` once empirically tuned.
+/// with `MKMSBR_L3_MIN_READS` once empirically tuned.
 const L3_READ_THRESHOLD_DEFAULT: usize = 50;
 
 #[test]
@@ -61,7 +61,7 @@ fn fat32_pbr_ntldr_loads_real_ntldr_in_qemu() {
         return;
     }
 
-    let blob = bootrec::FAT32_PBR_NTLDR_MULTI_BOOT;
+    let blob = mkmsbr::FAT32_PBR_NTLDR_MULTI_BOOT;
     if blob.is_empty() {
         panic!(
             "FAT32_PBR_NTLDR_MULTI_BOOT is empty (built without --features embed-boot-asm). \
@@ -75,7 +75,7 @@ fn fat32_pbr_ntldr_loads_real_ntldr_in_qemu() {
     );
 
     let tmp = tempdir();
-    let image = tmp.join("bootrec-l3-ntldr.img");
+    let image = tmp.join("mkmsbr-l3-ntldr.img");
     create_fat32_image(&image).expect("formatting FAT32 image");
     mcopy_to_root(&image, &ntldr, "NTLDR").expect("mcopy NTLDR");
     mcopy_to_root(&image, &ntdetect, "NTDETECT.COM").expect("mcopy NTDETECT.COM");
@@ -105,7 +105,7 @@ fn fat32_pbr_bootmgr_multi_loads_real_bootmgr_in_qemu() {
         return;
     }
 
-    let blob = bootrec::FAT32_PBR_BOOTMGR_MULTI_BOOT;
+    let blob = mkmsbr::FAT32_PBR_BOOTMGR_MULTI_BOOT;
     if blob.is_empty() {
         panic!(
             "FAT32_PBR_BOOTMGR_MULTI_BOOT is empty (built without --features embed-boot-asm). \
@@ -119,7 +119,7 @@ fn fat32_pbr_bootmgr_multi_loads_real_bootmgr_in_qemu() {
     );
 
     let tmp = tempdir();
-    let image = tmp.join("bootrec-l3-bootmgr.img");
+    let image = tmp.join("mkmsbr-l3-bootmgr.img");
     create_fat32_image(&image).expect("formatting FAT32 image");
     mcopy_to_root(&image, &bootmgr, "bootmgr").expect("mcopy bootmgr");
     mmd_dir(&image, "boot").expect("mmd ::/boot");
@@ -183,7 +183,7 @@ fn report_lba12_verdict(variant: &str, result: &TracedBoot) {
 }
 
 fn assert_chainloaded(variant: &str, result: TracedBoot) {
-    let threshold = std::env::var("BOOTREC_L3_MIN_READS")
+    let threshold = std::env::var("MKMSBR_L3_MIN_READS")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(L3_READ_THRESHOLD_DEFAULT);
@@ -239,7 +239,7 @@ fn create_fat32_image(image: &Path) -> Result<(), String> {
     let out = Command::new("mformat")
         .args(["-F", "-i"])
         .arg(image)
-        .args(["-v", "BOOTREC", "::"])
+        .args(["-v", "MKMSBR", "::"])
         .output()
         .map_err(|e| format!("mformat: {e}"))?;
     if !out.status.success() {
@@ -304,7 +304,7 @@ fn splice_pbr_multi(image: &Path, blob: &[u8]) -> Result<(), String> {
     let mut existing = [0u8; 1024];
     file.read_exact(&mut existing)
         .map_err(|e| format!("reading existing PBR + FSInfo: {e}"))?;
-    let spliced = bootrec::splice_fat32_pbr_multi(&existing, blob)
+    let spliced = mkmsbr::splice_fat32_pbr_multi(&existing, blob)
         .map_err(|e| format!("splice_fat32_pbr_multi: {e}"))?;
     file.seek(SeekFrom::Start(0))
         .map_err(|e| format!("seek: {e}"))?;
@@ -314,7 +314,7 @@ fn splice_pbr_multi(image: &Path, blob: &[u8]) -> Result<(), String> {
 }
 
 fn tempdir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("bootrec-l3-qemu-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("mkmsbr-l3-qemu-{}", std::process::id()));
     let _ = std::fs::create_dir_all(&dir);
     dir
 }

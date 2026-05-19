@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 /// Locate the ms-sys binary. Resolution order:
-///   1. `BOOTREC_MS_SYS` env var (full path)
+///   1. `MKMSBR_MS_SYS` env var (full path)
 ///   2. `/tmp/ms-sys/bin/ms-sys` (developer's local checkout — common case)
 ///   3. `/usr/local/bin/ms-sys`
 ///   4. `/opt/homebrew/bin/ms-sys`
@@ -20,12 +20,12 @@ use std::process::Command;
 /// can choose between `panic!()` ("this test requires ms-sys") and graceful
 /// skip ("eprintln! and return").
 pub fn find_ms_sys() -> Result<PathBuf, String> {
-    if let Ok(p) = std::env::var("BOOTREC_MS_SYS") {
+    if let Ok(p) = std::env::var("MKMSBR_MS_SYS") {
         let p = PathBuf::from(p);
         if p.exists() {
             return Ok(p);
         }
-        return Err(format!("BOOTREC_MS_SYS={} does not exist", p.display()));
+        return Err(format!("MKMSBR_MS_SYS={} does not exist", p.display()));
     }
     for candidate in &[
         "/tmp/ms-sys/bin/ms-sys",
@@ -49,7 +49,7 @@ pub fn find_ms_sys() -> Result<PathBuf, String> {
     }
     Err(
         "ms-sys not found. Install with `git clone https://gitlab.com/cmaiolino/ms-sys.git \
-         /tmp/ms-sys && cd /tmp/ms-sys && make`, or set BOOTREC_MS_SYS."
+         /tmp/ms-sys && cd /tmp/ms-sys && make`, or set MKMSBR_MS_SYS."
             .to_string(),
     )
 }
@@ -75,7 +75,7 @@ pub fn run_ms_sys(args: &[&str], image: &std::path::Path) -> Result<(), String> 
 /// Run ms-sys --mbr7 and return its 440-byte MBR boot code (offset 0..440
 /// of the resulting sector 0). The partition-table area (440..510) and the
 /// boot signature (510..512) are excluded because ms-sys preserves
-/// pre-existing partition-table bytes — that's outside what `bootrec`'s
+/// pre-existing partition-table bytes — that's outside what `mkmsbr`'s
 /// `mbr_win7` boot-code variant produces.
 pub fn ms_sys_mbr_win7_bootcode() -> Result<[u8; 440], String> {
     mbr_boot_code(&["--mbr7"])
@@ -89,7 +89,7 @@ pub fn ms_sys_mbr_xp_bootcode() -> Result<[u8; 440], String> {
 fn mbr_boot_code(args: &[&str]) -> Result<[u8; 440], String> {
     use std::io::Read;
     let tmp = std::env::temp_dir().join(format!(
-        "bootrec-oracle-{}-{}",
+        "mkmsbr-oracle-{}-{}",
         args[0].trim_start_matches('-'),
         std::process::id()
     ));
@@ -138,7 +138,7 @@ pub fn ms_sys_fat32_bootmgr_pbr_multi() -> Result<[u8; 8192], String> {
 fn fat32_pbr_sector0(args: &[&str]) -> Result<[u8; 512], String> {
     use std::io::Read;
     let tmp = std::env::temp_dir().join(format!(
-        "bootrec-pbr-oracle-{}-{}",
+        "mkmsbr-pbr-oracle-{}-{}",
         args[0].trim_start_matches('-'),
         std::process::id()
     ));
@@ -151,7 +151,7 @@ fn fat32_pbr_sector0(args: &[&str]) -> Result<[u8; 512], String> {
     let fmt = std::process::Command::new("mformat")
         .args(["-F", "-i"])
         .arg(&tmp)
-        .args(["-v", "BOOTREC", "::"])
+        .args(["-v", "MKMSBR", "::"])
         .output()
         .map_err(|e| format!("mformat: {e}"))?;
     if !fmt.status.success() {
@@ -197,7 +197,7 @@ pub fn ms_sys_ntfs_pbr_sectors_0_15() -> Result<[u8; 8192], String> {
 fn ntfs_pbr_sector0(args: &[&str]) -> Result<[u8; 512], String> {
     use std::io::Read;
     let tmp = std::env::temp_dir().join(format!(
-        "bootrec-ntfs-pbr-oracle-{}-{}",
+        "mkmsbr-ntfs-pbr-oracle-{}-{}",
         args[0].trim_start_matches('-'),
         std::process::id()
     ));
@@ -219,7 +219,7 @@ fn ntfs_pbr_sector0(args: &[&str]) -> Result<[u8; 512], String> {
 fn ntfs_pbr_sectors_0_15(args: &[&str]) -> Result<[u8; 8192], String> {
     use std::io::Read;
     let tmp = std::env::temp_dir().join(format!(
-        "bootrec-ntfs-pbr-oracle-multi-{}-{}",
+        "mkmsbr-ntfs-pbr-oracle-multi-{}-{}",
         args[0].trim_start_matches('-'),
         std::process::id()
     ));
@@ -239,7 +239,7 @@ fn ntfs_pbr_sectors_0_15(args: &[&str]) -> Result<[u8; 8192], String> {
 fn fat32_pbr_sectors_0_15(args: &[&str]) -> Result<[u8; 8192], String> {
     use std::io::Read;
     let tmp = std::env::temp_dir().join(format!(
-        "bootrec-pbr-oracle-multi-{}-{}",
+        "mkmsbr-pbr-oracle-multi-{}-{}",
         args[0].trim_start_matches('-'),
         std::process::id()
     ));
@@ -249,7 +249,7 @@ fn fat32_pbr_sectors_0_15(args: &[&str]) -> Result<[u8; 8192], String> {
     let fmt = std::process::Command::new("mformat")
         .args(["-F", "-i"])
         .arg(&tmp)
-        .args(["-v", "BOOTREC", "::"])
+        .args(["-v", "MKMSBR", "::"])
         .output()
         .map_err(|e| format!("mformat: {e}"))?;
     if !fmt.status.success() {
