@@ -176,7 +176,7 @@ external tools. The full set:
 cargo test --test layer1_oracle --features compare-mssys -- --ignored
 
 # Layer 1 — byte-diff gap detection vs ms-sys (catches "sectors ms-sys
-# writes but we don't"; see docs/BACKLOG.md §Byte-diff findings).
+# writes but we don't"; see docs/L4_INVESTIGATION.md §Byte-diff findings).
 cargo test --test byte_diff_vs_mssys --features compare-mssys -- --ignored
 
 # Layer 2 — synthetic QEMU boot smoke.
@@ -224,7 +224,7 @@ Set `MKMSBR_L3_MIN_READS=<n>` to override the default threshold.
 ## Hardware compatibility notes
 
 Two adjustments learned the hard way during the 2026-05-19 real-hardware
-investigation (see [docs/BACKLOG.md](docs/BACKLOG.md) §L4 investigation
+investigation (see [docs/L4_INVESTIGATION.md](docs/L4_INVESTIGATION.md)
 for the full nine-iteration debug log):
 
 - **CHS reads, not LBA-ext.** PBR stages use INT 13h fn 0x02 rather

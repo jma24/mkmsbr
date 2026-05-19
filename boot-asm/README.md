@@ -54,8 +54,8 @@ the prebuilt blobs in `../blobs-prebuilt/` per the recipe at
 
 Four eval layers, ordered by feedback-loop speed. See
 [`../docs/SPEC.md`](../docs/SPEC.md) §Verifiability hierarchy for the
-full story and [`../docs/BACKLOG.md`](../docs/BACKLOG.md) §Variant
-matrix for which variants pass which layers today.
+full story and [`../docs/BACKLOG.md`](../docs/BACKLOG.md) §Current
+state for which variants pass which layers today.
 
 1. **Unit (`cargo test`)** — splice logic and partition-table encoding.
 2. **L1 — byte-distance vs ms-sys** — `cargo test --test layer1_oracle --features compare-mssys -- --ignored` (needs ms-sys on PATH). The `byte_diff_vs_mssys` companion test surfaces sectors ms-sys writes but mkmsbr doesn't.

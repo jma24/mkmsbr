@@ -64,7 +64,7 @@ All Layer-1, Layer-2 and Layer-3 tests for the four implemented
 variants (`mbr_xp`, `mbr_win7`, `fat32_pbr_ntldr`,
 `fat32_pbr_bootmgr` single + multi-sector) pass. Variant-by-variant
 status — including L1 byte-distances and L3 observed read counts — is
-maintained in `docs/BACKLOG.md` §Variant matrix.
+maintained in `docs/BACKLOG.md` §Current state.
 
 The remaining `ntfs_pbr_bootmgr` variant has no eval coverage yet
 (L2 NTFS harness is the prerequisite).
