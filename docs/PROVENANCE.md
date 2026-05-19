@@ -52,18 +52,30 @@ Three reasons, in increasing order of importance:
 
 ## SHA-256 of expected bytes
 
-For ease of regression detection without setting up the equivalence test, here are the SHA-256 hashes our NASM output should produce. (TODO: fill these in once the NASM sources are written and verified against ms-sys at least once.)
+These are the SHA-256 hashes of the boot blobs as of the v1.0.1 tag.
+They match the bytes shipped in [`blobs-prebuilt/`](../blobs-prebuilt)
+and the bytes produced by `nasm` against the `boot-asm/` sources at
+the same tag.
 
 ```
-mbr_xp.bin                    SHA-256: TODO
-mbr_win7.bin                  SHA-256: TODO
-fat32_pbr_ntldr.bin           SHA-256: TODO
-fat32_pbr_bootmgr.bin         SHA-256: TODO
-fat32_pbr_bootmgr_multi.bin   SHA-256: TODO
-ntfs_pbr_bootmgr_multi.bin    SHA-256: TODO
+mbr_xp.bin                    884328001d1ada748453b0d670252058bd18e00ca4eebf2d5f026cbda4b7a07b
+mbr_win7.bin                  25eb0b47025d4db19b20bfae1c70d0efde6dd504277e0c2a0c0b752bb5ebaa67
+fat32_pbr_bootmgr.bin         dc65a7a25725e251a579b5e4929603939f544eebfff93f97c854c91372429e4a
+fat32_pbr_bootmgr_multi.bin   023bb589b05bda3b67684caaee68adc39f98740a1d7cceb37f28c8d30fb709e2
+fat32_pbr_ntldr_multi.bin     28550dbe96c3049ffb36a15122c3f93da3ad7f95eba7a24fb069289e0c838b6f
+ntfs_pbr_bootmgr_multi.bin    0b7e479a72ecd020133c0b1eaddfe6b6e54337124a97a133e42c17f53a5c3dac
+xp_setup_chain_bootsect.bin   a1f10692b88e64b5a4b7aedec8dd2f1276eb8f671fa8c103c52ab809fd5c729c
 ```
 
-If `cargo build` produces blobs whose SHA-256s don't match these, something changed in our assembly source or in NASM itself. The test `tests/blob_hashes.rs` enforces this.
+Regenerate from a fresh checkout:
+
+```sh
+cd blobs-prebuilt && shasum -a 256 *.bin
+```
+
+If those hashes don't match what's printed above, either `boot-asm/`
+changed (intentional — bump the version + update this table) or
+something drifted in NASM (unintentional — investigate).
 
 ## What if Microsoft objects?
 
