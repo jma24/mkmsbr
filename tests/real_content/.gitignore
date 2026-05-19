@@ -1,0 +1,9 @@
+# Microsoft binaries extracted from licensed install ISOs by
+# scripts/build_l3_fixtures.sh. These are NOT redistributable —
+# every developer / CI runner builds their own local copy by
+# pointing the script at an ISO they hold a license for.
+#
+# Ignore everything except the manifest and this file itself.
+*
+!.gitignore
+!MANIFEST.md
