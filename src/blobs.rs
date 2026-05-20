@@ -61,6 +61,25 @@ pub const NTFS_PBR_BOOTMGR_MULTI_BOOT: &[u8] =
 pub const XP_SETUP_CHAIN_BOOTSECT_BOOT: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/xp_setup_chain_bootsect.bin"));
 
+/// Single-sector destructive-wipe bootsector. 512 bytes, ready to drop
+/// onto a FAT32 partition (e.g. at `\WIPE.DAT`) and reference from an
+/// NTLDR `boot.ini` bootsector-file entry.
+///
+/// When chainloaded by NTLDR, prompts the user for Y/y confirmation
+/// then zeros LBA 0..2047 (the first 1 MiB) of BIOS drive 0x81 — the
+/// conventional internal-HDD slot when the system booted from a USB
+/// stick. Wipes MBR + protective-MBR slack + start of any GPT primary
+/// header; leaves the GPT backup at last-LBA intact (XP doesn't speak
+/// GPT). After wipe or cancel, waits for a keypress and warm-reboots
+/// via INT 19h.
+///
+/// No splice required — the bytes are self-contained. Caller writes
+/// the slice verbatim to a file on the FAT partition; NTLDR loads the
+/// first sector of that file at 0000:7C00 and jumps. See
+/// `boot-asm/wipe_bootsect.asm` for the source.
+pub const WIPE_BOOTSECT_BOOT: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/wipe_bootsect.bin"));
+
 /// Returns `true` if the boot blobs were embedded at build time.
 pub fn embedded() -> bool {
     !MBR_XP_BOOT.is_empty()

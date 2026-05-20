@@ -26,6 +26,7 @@ fn main() {
         "mbr_win7",
         "fat32_pbr_bootmgr",
         "xp_setup_chain_bootsect",
+        "wipe_bootsect",
     ];
 
     let embed = env::var("CARGO_FEATURE_EMBED_BOOT_ASM").is_ok();

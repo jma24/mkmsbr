@@ -4,6 +4,29 @@ All notable changes to mkmsbr are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`wipe_bootsect` — destructive-wipe single-sector bootsector.**
+  512-byte real-mode payload that NTLDR can chainload via a `boot.ini`
+  bootsector-file entry. On execution it captures BIOS-supplied `DL`
+  (the USB drive — never touched), probes `DL XOR 1` as the target,
+  reads the target's size via `INT 13h fn 0x48`, displays
+  `target=0xNN size=NNNNNN MiB / USB=0xNN safe / Y=wipe?`, and on `Y`
+  zeros LBA 0..2047 (1 MiB) of the target via `INT 13h fn 0x43` then
+  reboots via `INT 19h`. Source in `boot-asm/wipe_bootsect.asm`,
+  exposed as `mkmsbr::WIPE_BOOTSECT_BOOT`. Shipped to support usbwin's
+  XP-install dirty-disk cleanup path; verified end-to-end on Dell
+  E6410 (2026-05-20).
+
+  MiB conversion uses 32-bit `div ebx` rather than 16-bit `div bx` —
+  16-bit DIV overflows the quotient register on any disk larger than
+  ~64 GB and raises `#DE`, which on real hardware leaves the CPU at
+  the INT 0 vector with a flashing cursor. Cost: a handful of operand-
+  size-prefix bytes; the bootsector still fits in 512 bytes including
+  the 0x55 0xAA boot signature.
+
 ## [1.0.1] — 2026-05-19
 
 ### Fixed
