@@ -16,7 +16,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `target=0xNN size=NNNNNN MiB / USB=0xNN safe / Y=wipe?`, and on `Y`
   zeros LBA 0..2047 (1 MiB) of the target via `INT 13h fn 0x43` then
   reboots via `INT 19h`. Source in `boot-asm/wipe_bootsect.asm`,
-  exposed as `mkmsbr::WIPE_BOOTSECT_BOOT`. Shipped to support usbwin's
+  exposed as `mkmsbr::WIPE_BOOTSECT_BOOT`. Shipped to support bootsmith's
   XP-install dirty-disk cleanup path; verified end-to-end on Dell
   E6410 (2026-05-20).
 
@@ -51,7 +51,7 @@ Four of five v1.0 variants ship at their spec-defined eval target (see
 (`ntfs_pbr_bootmgr`) ships L2-green and awaits a real-NTFS L3 fixture.
 
 - `mbr_xp` — Windows 2000/XP/2003 MBR. L1 + L2 + ships in production
-  via [usbwin](https://github.com/jma24/usbwin) XP mode.
+  via [bootsmith](https://github.com/jma24/bootsmith) XP mode.
 - `mbr_win7` — Windows 7/8/10/11 MBR. L1 + L2 + Win 7 install USBs
   boot end-to-end on the Dell E6410 reference rig.
 - `fat32_pbr_ntldr` (multi-sector) — FAT32 PBR loading NTLDR. L1 + L2

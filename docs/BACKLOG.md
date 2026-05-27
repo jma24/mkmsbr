@@ -1,8 +1,10 @@
 # mkmsbr backlog
 
-Post-v1.0.1 roadmap. v1.0 shipped on 2026-05-19 with four of five
-boot-record variants at their spec-defined eval target; this doc
-tracks what's left for v1.1 and beyond.
+Post-v1.0.1 roadmap. v1.0 shipped on 2026-05-19 with all five
+boot-record variants at their v1.0 eval targets — four at their full
+SPEC.md targets, plus `ntfs_pbr_bootmgr` at L2 (experimental). This
+doc tracks what's left for v1.1 and beyond, including the work to
+take `ntfs_pbr_bootmgr` from L2 to its full SPEC target (L2+L3).
 
 Engineering history (L4 real-hardware investigation, byte-diff
 findings, BIOS USB-emulation discovery) lives in
@@ -16,29 +18,36 @@ Per [SPEC.md](SPEC.md) §Component breakdown. "L1" = byte-distance vs
 ms-sys oracle. "L2" = synthetic QEMU smoke. "L3" = QEMU against real
 Microsoft NTLDR / bootmgr. "L4" = real legacy-BIOS hardware.
 
-| Variant                      | L1 | L2 | L3 | L4 | Spec target | Status |
-|------------------------------|----|----|----|----|-------------|--------|
-| `mbr_xp`                     | ✓  | ✓  | n/a | ✓ (via usbwin XP)   | L1+L2       | shipped |
-| `mbr_win7`                   | ✓  | ✓  | n/a | ✓ Win 7 end-to-end  | L1+L2       | shipped |
-| `fat32_pbr_ntldr` (multi)    | ✓  | ✓  | ✓  | ✓ NTLDR loads       | L1+L2+L3+L4 | shipped |
-| `fat32_pbr_bootmgr` (multi)  | ✓  | ✓  | ✓  | ✓ Win 7 end-to-end  | L2+L3+L4    | shipped |
-| `ntfs_pbr_bootmgr` (multi)   | —  | ✓  | —  | —                   | L2+L3       | L2 green; L1 + L3 pending |
+| Variant                      | L1 | L2 | L3 | L4 | SPEC target | v1.0 status |
+|------------------------------|----|----|----|----|-------------|-------------|
+| `mbr_xp`                     | ✓  | ✓  | n/a | ✓ (via bootsmith XP)   | L1+L2       | shipped at SPEC target |
+| `mbr_win7`                   | ✓  | ✓  | n/a | ✓ Win 7 end-to-end  | L1+L2       | shipped at SPEC target |
+| `fat32_pbr_ntldr` (multi)    | ✓  | ✓  | ✓  | ✓ NTLDR loads       | L1+L2+L3+L4 | shipped at SPEC target |
+| `fat32_pbr_bootmgr` (multi)  | ✓  | ✓  | ✓  | ✓ Win 7 end-to-end  | L2+L3+L4    | shipped at SPEC target |
+| `ntfs_pbr_bootmgr` (multi)   | —¹ | ✓  | —  | —                   | L2+L3       | shipped at L2 (experimental); L3 in v1.1+ |
+
+¹ A distance-from-`ms-sys --ntfs` test exists at
+[`tests/layer1_oracle.rs`](../tests/layer1_oracle.rs) but is structurally
+vacuous (our 16-byte stage-1 stub vs ms-sys's full single-sector MFT
+walker → high distance by design). L2 is the real correctness gate.
 
 The single-sector `fat32_pbr_bootmgr` is retained as a smoke-test
 baseline only.
 
-## Variant completion
+## v1.1+ variant work
 
-### `ntfs_pbr_bootmgr` to spec target
+### `ntfs_pbr_bootmgr` from L2 (v1.0) to L2+L3 SPEC target
 
-The remaining variant from v1.0 scope. Stage 2 walks $MFT with USA
-fixups, B+tree-style linear INDX scan, $MFT extent chasing, and
-inline $INDEX_ROOT scanning. L2 green against an ntfs-3g-formatted
-volume; the open work is real-content validation.
+v1.0 ships this variant at L2 (experimental), gated on `--ntfs-bootmgr`.
+Stage 2 walks $MFT with USA fixups, B+tree-style linear INDX scan, $MFT
+extent chasing, and inline $INDEX_ROOT scanning, validated against an
+ntfs-3g-formatted volume. v1.1+ work is real-content validation against
+real Microsoft NTFS layouts — required before the variant can be
+declared production-grade for Win 8.1+ install media (where
+`install.wim` > 4 GiB forces NTFS over FAT32).
 
 | Item                                 | Notes                                                              | Status |
 |--------------------------------------|--------------------------------------------------------------------|--------|
-| L1 byte-distance oracle              | `ms-sys --ntfs` companion to the existing `--mbr` / `--fat32*` oracles | TODO |
 | L3 fixture against real Win 7 NTFS   | Same shape as `fat32_pbr_bootmgr` L3; needs a real Win 7 NTFS image to extract from | TODO |
 | Resident `$DATA` support             | Current stage 2 assumes non-resident; fake bootmgr in L2 must be padded past ~700 B | TODO (edge case) |
 
@@ -72,7 +81,7 @@ SPEC.md §Library scope target is typed-input.
 | GitHub Actions workflow                                                | clean_room_check + `cargo test` on every PR                        | TODO |
 | L1/L2 in CI (`#[ignore]` gate)                                         | Needs nasm + qemu + mtools + ms-sys on runner image                | TODO |
 | L3 in CI                                                               | Depends on fixture-build infrastructure + license-friendly runner  | TODO |
-| Homebrew tap (`jma24/homebrew-mkmsbr`)                                 | Formula drafted; needs the tap repo + sha256 from a tagged release | TODO |
+| Homebrew tap (`jma24/homebrew-mkmsbr`)                                 | Live at <https://github.com/jma24/homebrew-mkmsbr>; `brew install jma24/mkmsbr/mkmsbr` | DONE |
 | Prebuilt binaries on GitHub Releases                                   | macOS arm64/x64 + Linux x64; cross-build via release workflow      | TODO |
 
 ## Clean-room process
@@ -96,7 +105,7 @@ SPEC.md §Library scope target is typed-input.
 | `docs/PROVENANCE.md`                                                   | Clean-room protocol + blob hashes                                  | ✓ |
 | `docs/L4_INVESTIGATION.md`                                             | Real-hardware bring-up post-mortem                                 | ✓ |
 | `docs/XP_SETUP_CHAIN_BOOTSECT_SPEC.md`                                 | XP Setup chain primitive design                                    | ✓ |
-| `docs/BOOT_RECORDS.md` (BPB rationale)                                 | Why we splice rather than build; carryover from usbwin             | TODO |
+| `docs/BOOT_RECORDS.md` (BPB rationale)                                 | Why we splice rather than build; carryover from bootsmith             | TODO |
 | `COVERAGE.md` (machine-checked variant × layer)                        | SPEC.md §Verifiable                                                | TODO |
 | `SPEC_TRACE.md` (spec → code links)                                    | SPEC.md §Verifiable                                                | TODO |
 

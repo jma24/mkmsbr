@@ -15,7 +15,7 @@ exclude = [
     "boot-asm/**/*.bin",
     "tests/real_content/**",
     ".claude/**",
-    "docs/USBWIN_NTLDR_FINDINGS_2026_05_19.md",
+    "docs/BOOTSMITH_NTLDR_FINDINGS_2026_05_19.md",
 ]
 
 [lib]
