@@ -51,6 +51,22 @@ declared production-grade for Win 8.1+ install media (where
 | L3 fixture against real Win 7 NTFS   | Same shape as `fat32_pbr_bootmgr` L3; needs a real Win 7 NTFS image to extract from | TODO |
 | Resident `$DATA` support             | Current stage 2 assumes non-resident; fake bootmgr in L2 must be padded past ~700 B | TODO (edge case) |
 
+### INT 13h drive-swap in `build_xp_setup_chain_bootsect`
+
+XP text-mode setup picks the system disk as the lowest-numbered
+`\Device\HarddiskN`, which is INT 13h enumeration order — on BIOSes
+that put USB at `DL=0x80`, that means setup writes its MBR/PBR/NTLDR
+bootstrap to the USB it just booted from, leaving both USB and HDD
+unbootable after the phase-1 reboot. The GRUB4DOS-style fix is a
+drive-swap before chainloading `setupldr.bin`. Bug reproduction on
+Dell E6410 (2026-05-20), ordering vs a related bootsmith-side
+`winnt.sif` fix, and the proposed asm shape are in
+[XP_INT13_DRIVE_SWAP_SPEC.md](XP_INT13_DRIVE_SWAP_SPEC.md).
+
+| Item                                | Notes                                                                                       | Status |
+|-------------------------------------|---------------------------------------------------------------------------------------------|--------|
+| Drive-swap in stage 1               | See [XP_INT13_DRIVE_SWAP_SPEC.md](XP_INT13_DRIVE_SWAP_SPEC.md); gated on bootsmith-side `winnt.sif` fix landing first | TODO |
+
 ## API polish
 
 The shipping 1.0 API is splice-based and takes raw byte slices; the
