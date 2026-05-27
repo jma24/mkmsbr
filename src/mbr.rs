@@ -152,12 +152,12 @@ pub fn build_mbr(boot_code: &[u8], disk_sectors: u64) -> Result<[u8; 512], MbrEr
     // and BCD reference the boot disk by this signature; it must be
     // non-zero for Windows handoff to find its own boot drive. Some
     // 2000s-era BIOSes also key USB-FDD vs USB-HDD emulation on whether
-    // this is non-zero. ms-sys writes a per-disk random value here; we
-    // currently use a fixed test value (0xDEADBEEF) to probe whether the
-    // BIOS cares about non-zero signature presence at all. If the L4
-    // boot succeeds with this, the next step is `mbr_win7_with_signature
-    // (disk, sig: u32)` so bootsmith can generate a real per-USB sig.
-    // TODO(v1.0): replace fixed value with caller-supplied parameter.
+    // this is non-zero. ms-sys writes a per-disk random value here; v1.0
+    // ships a fixed value (0xDEADBEEF), which the 2026-05-19 L4 boot on
+    // Dell E6410 confirmed BIOSes accept. v1.1+ adds a per-USB sig API
+    // (`mbr_win7_with_signature(disk, sig: u32)`) so bootsmith can mint a
+    // unique signature per stick (see README §Scope and docs/BACKLOG.md).
+    // TODO(v1.1+): replace fixed value with caller-supplied parameter.
     mbr[0x1B8..0x1BC].copy_from_slice(&0xDEADBEEFu32.to_le_bytes());
 
     let active = PartitionEntry {
