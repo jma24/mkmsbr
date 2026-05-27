@@ -205,7 +205,7 @@ layout. No LBA 12 fix was needed.
   count anyway, but preserving the formatter's bytes avoids spurious
   diffs from the byte-diff eval.
 - **MBR disk signature primitive.** Filed as `mbr_win7_with_signature`
-  for v1.1 so usbwin can thread per-USB signatures through.
+  for v1.1 so bootsmith can thread per-USB signatures through.
 
 ## L3 gate weakness — captured, not yet fixed
 
@@ -239,7 +239,7 @@ Intel desktop.
 
 **XP NTLDR's PBR step boots on the Dell E6410** — NTLDR menu reaches
 the user. Selecting either Setup entry trips on `hal.dll missing`
-because BOOTSECT.DAT is missing; that's a downstream usbwin
+because BOOTSECT.DAT is missing; that's a downstream bootsmith
 integration step, not mkmsbr's surface (covered by the
 `build_xp_setup_chain_bootsect` primitive shipped the same day, see
 [docs/XP_SETUP_CHAIN_BOOTSECT_SPEC.md](XP_SETUP_CHAIN_BOOTSECT_SPEC.md)).

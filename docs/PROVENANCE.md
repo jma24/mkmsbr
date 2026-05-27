@@ -1,16 +1,16 @@
 # Boot-blob provenance
 
-usbwin embeds three small (~512-byte) chunks of x86 real-mode boot code: an MBR loader, a FAT32 PBR loader, and an NTFS PBR loader. This document records where those bytes come from and why we're confident shipping them under MIT.
+bootsmith embeds three small (~512-byte) chunks of x86 real-mode boot code: an MBR loader, a FAT32 PBR loader, and an NTFS PBR loader. This document records where those bytes come from and why we're confident shipping them under MIT.
 
 ## Source: hand-written NASM in this repo
 
-The bytes shipped in `target/release/usbwin` are produced at build time from the NASM source files under [`boot-asm/`](../boot-asm/). Those files are original work by the usbwin authors and are licensed MIT, identical to the rest of this codebase.
+The bytes shipped in `target/release/bootsmith` are produced at build time from the NASM source files under [`boot-asm/`](../boot-asm/). Those files are original work by the bootsmith authors and are licensed MIT, identical to the rest of this codebase.
 
-`boot-asm/Makefile` invokes `nasm` and emits 512-byte raw binaries. `crates/usbwin-boot/build.rs` runs the makefile and `include_bytes!`s the results into the compiled binary. There is no external dependency at runtime; NASM is a build-time tool only.
+`boot-asm/Makefile` invokes `nasm` and emits 512-byte raw binaries. `crates/bootsmith-boot/build.rs` runs the makefile and `include_bytes!`s the results into the compiled binary. There is no external dependency at runtime; NASM is a build-time tool only.
 
 ## Clean-room development protocol
 
-The boot record source files are developed under a strict clean-room protocol. Anyone working on `boot-asm/*.asm` (or on `crates/usbwin-boot/src/pbr.rs`) may consult **only** these sources:
+The boot record source files are developed under a strict clean-room protocol. Anyone working on `boot-asm/*.asm` (or on `crates/bootsmith-boot/src/pbr.rs`) may consult **only** these sources:
 
 **Allowed references:**
 - Microsoft's *FAT32 File System Specification* (FATGEN103.doc / FATGEN102.pdf, publicly published by Microsoft in 2000 and republished many times since).
@@ -35,7 +35,7 @@ When in doubt about a reference's status, stop and document the question in a PR
 ```sh
 # one-time: clone ms-sys somewhere
 git clone https://gitlab.com/cmaiolino/ms-sys.git /tmp/ms-sys
-export USBWIN_MSSYS_BLOBS_DIR=/tmp/ms-sys/inc
+export BOOTSMITH_MSSYS_BLOBS_DIR=/tmp/ms-sys/inc
 
 cargo test --features compare-mssys
 ```

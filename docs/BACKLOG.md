@@ -18,7 +18,7 @@ Microsoft NTLDR / bootmgr. "L4" = real legacy-BIOS hardware.
 
 | Variant                      | L1 | L2 | L3 | L4 | Spec target | Status |
 |------------------------------|----|----|----|----|-------------|--------|
-| `mbr_xp`                     | ✓  | ✓  | n/a | ✓ (via usbwin XP)   | L1+L2       | shipped |
+| `mbr_xp`                     | ✓  | ✓  | n/a | ✓ (via bootsmith XP)   | L1+L2       | shipped |
 | `mbr_win7`                   | ✓  | ✓  | n/a | ✓ Win 7 end-to-end  | L1+L2       | shipped |
 | `fat32_pbr_ntldr` (multi)    | ✓  | ✓  | ✓  | ✓ NTLDR loads       | L1+L2+L3+L4 | shipped |
 | `fat32_pbr_bootmgr` (multi)  | ✓  | ✓  | ✓  | ✓ Win 7 end-to-end  | L2+L3+L4    | shipped |
@@ -96,7 +96,7 @@ SPEC.md §Library scope target is typed-input.
 | `docs/PROVENANCE.md`                                                   | Clean-room protocol + blob hashes                                  | ✓ |
 | `docs/L4_INVESTIGATION.md`                                             | Real-hardware bring-up post-mortem                                 | ✓ |
 | `docs/XP_SETUP_CHAIN_BOOTSECT_SPEC.md`                                 | XP Setup chain primitive design                                    | ✓ |
-| `docs/BOOT_RECORDS.md` (BPB rationale)                                 | Why we splice rather than build; carryover from usbwin             | TODO |
+| `docs/BOOT_RECORDS.md` (BPB rationale)                                 | Why we splice rather than build; carryover from bootsmith             | TODO |
 | `COVERAGE.md` (machine-checked variant × layer)                        | SPEC.md §Verifiable                                                | TODO |
 | `SPEC_TRACE.md` (spec → code links)                                    | SPEC.md §Verifiable                                                | TODO |
 

@@ -8,7 +8,7 @@ licensed.
 spec-defined eval target (see [docs/SPEC.md](docs/SPEC.md) §Component
 breakdown); the 5th (`ntfs_pbr_bootmgr`) is L2-green and waiting on a
 real NTFS fixture for its L3 run. mkmsbr is the default boot-record
-backend in [usbwin](https://github.com/jma24/usbwin) v1.0, where Win 7
+backend in [bootsmith](https://github.com/jma24/bootsmith) v1.0, where Win 7
 install USBs built with mkmsbr's MBR + FAT32 PBR boot end-to-end on real
 legacy-BIOS hardware (Dell E6410, verified 2026-05-19). See
 [docs/PROVENANCE.md](docs/PROVENANCE.md) for the clean-room protocol and
@@ -130,7 +130,7 @@ bootmgr. "L4" = real legacy-BIOS hardware.
 
 | Variant                      | L1                              | L2 | L3              | L4                                            | Spec target | Status |
 |------------------------------|---------------------------------|----|-----------------|-----------------------------------------------|-------------|--------|
-| `mbr_xp`                     | 373/440 vs `--mbr`              | ✓  | n/a             | ✓ ships in production via usbwin XP mode      | L1+L2       | shipped |
+| `mbr_xp`                     | 373/440 vs `--mbr`              | ✓  | n/a             | ✓ ships in production via bootsmith XP mode      | L1+L2       | shipped |
 | `mbr_win7`                   | 396/440 vs `--mbr7`             | ✓  | n/a             | ✓ Win 7 install USB boots end-to-end          | L1+L2       | shipped |
 | `fat32_pbr_ntldr` (multi)    | vs `--fat32nt` s0 only          | ✓  | 987 reads       | ✓ NTLDR loads on Dell E6410                   | L1+L2+L3+L4 | shipped |
 | `fat32_pbr_bootmgr` (multi)  | ≥378/512 vs `--fat32pe` s1..15  | ✓  | 1520 reads      | ✓ Win 7 install USB boots end-to-end          | L2+L3+L4    | shipped |
@@ -141,8 +141,8 @@ baseline. The multi-sector variant is the v1.0 target.
 
 ## Used by
 
-mkmsbr ships in [usbwin](https://github.com/jma24/usbwin) v1.0 as the
-default `--boot-record=mkmsbr` backend. usbwin's Win 7 and Windows XP
+mkmsbr ships in [bootsmith](https://github.com/jma24/bootsmith) v1.0 as the
+default `--boot-record=mkmsbr` backend. bootsmith's Win 7 and Windows XP
 install-USB pipelines link mkmsbr in-process for MBR + FAT32 PBR bytes
 and the XP-Setup BOOTSECT.DAT chain loader; ms-sys is now an opt-in
 `--boot-record=ms-sys` fallback retained for byte-equality auditing.

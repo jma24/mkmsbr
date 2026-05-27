@@ -76,7 +76,7 @@ pub struct LbaRun {
 /// space depending on payload size.
 ///
 /// `runs` is the list of LBA extents to read, partition-relative,
-/// pre-coalesced. The caller (usbwin's FAT walker) collapses adjacent
+/// pre-coalesced. The caller (bootsmith's FAT walker) collapses adjacent
 /// LBAs into runs so an unfragmented 260 KB `$LDR$` fits in 1–3 runs
 /// rather than 520 separate entries.
 ///

@@ -1,6 +1,6 @@
-# Spec request from usbwin — `build_xp_setup_chain_bootsect`
+# Spec request from bootsmith — `build_xp_setup_chain_bootsect`
 
-This is a request for a new mkmsbr public function. usbwin needs it to
+This is a request for a new mkmsbr public function. bootsmith needs it to
 finish the WinSetupFromUSB XP boot chain. Without it, the chain breaks
 at the "BOOTSECT.DAT loads `$LDR$`" step and NTLDR falls through to its
 default Windows-load path → classic
@@ -29,8 +29,8 @@ puts the literal `NTLDR` filename string at offset 0x5D0 (sector 2 /
 stage 2), unreachable from a single-sector BOOTSECT.DAT load. So the
 patch-the-PBR approach can't work for mkmsbr's PBR.
 
-The clean fix: usbwin walks FAT in advance (already implemented in
-`crates/usbwin/src/pipeline/fat32.rs`), finds `$LDR$`'s LBAs, and hands
+The clean fix: bootsmith walks FAT in advance (already implemented in
+`crates/bootsmith/src/pipeline/fat32.rs`), finds `$LDR$`'s LBAs, and hands
 them to a mkmsbr function that emits a single-sector loader. The loader
 doesn't need a FAT walker, doesn't need a filename string — it just
 CHS-reads pre-resolved LBAs and jumps. That fits in 512 bytes with room
@@ -44,7 +44,7 @@ to spare.
 /// sector CHS-reads `$LDR$`'s contents from the given LBA runs into
 /// memory at `target_segment:0x0000` and far-jumps there.
 ///
-/// No FAT walker, no filename lookup — usbwin walks FAT in advance and
+/// No FAT walker, no filename lookup — bootsmith walks FAT in advance and
 /// hands us pre-resolved LBAs. Just geometry-probe + CHS-read +
 /// far-jmp + the standard error strings.
 ///
@@ -76,7 +76,7 @@ pub struct LbaRun {
 - `runs` empty → error ("nothing to load").
 - `runs.len()` exceeds whatever cap the implementation picks (suggest 8
   or 16 — see below) → error with a "fragmentation too high" message so
-  usbwin can fall back or surface to the user.
+  bootsmith can fall back or surface to the user.
 - `formatter_sector0` lacks 0xAA55 signature at offset 0x1FE → error.
 - `target_segment` < 0x0050 or > 0x9000 → error (sanity).
 - Total sectors > some bound (256 = 128 KB? probably need ~520 for a
@@ -89,20 +89,20 @@ won't fit in a 512-byte sector. FAT32 typically allocates a freshly-
 staged file in 1–3 contiguous runs, so `LbaRun { u32 + u16 } = 6 bytes`
 per run gives 6–18 bytes of LBA table, leaving ~480 bytes for boot code.
 
-usbwin's `pipeline::fat32::find_file_extent` returns a flat LBA list;
-usbwin coalesces consecutive LBAs into runs before calling this
+bootsmith's `pipeline::fat32::find_file_extent` returns a flat LBA list;
+bootsmith coalesces consecutive LBAs into runs before calling this
 function. If we get unlucky and a 260 KB file is fragmented into >8
-runs, usbwin can either retry-with-different-formatter-params or fail
+runs, bootsmith can either retry-with-different-formatter-params or fail
 with a clear message — we don't expect this in practice because the
 file is the very first thing on a freshly-formatted partition.
 
 ### Why partition-relative LBAs
 
 Two equivalent choices:
-1. **Partition-relative**: usbwin computes LBAs relative to the start
+1. **Partition-relative**: bootsmith computes LBAs relative to the start
    of the partition (the natural output of a FAT walk). The bootsector
    adds `BPB.HiddSec` at runtime to get absolute disk LBAs for INT 13h.
-2. **Absolute disk LBAs**: usbwin adds `HiddSec` before calling this.
+2. **Absolute disk LBAs**: bootsmith adds `HiddSec` before calling this.
    Simpler sector code, no BPB read at runtime.
 
 Preference: (1) partition-relative. Matches how PBRs conventionally
@@ -196,7 +196,7 @@ lines of NASM, sharing most of its primitives with the existing PBR work.
 
 Suggested L2 harness, analogous to existing PBR smoke tests:
 
-1. usbwin (or the test) builds a synthetic FAT32 image:
+1. bootsmith (or the test) builds a synthetic FAT32 image:
    - Format a 16 MiB disk image (mformat / mkfs.vfat)
    - Write a 64 KB stub file at a known location with a payload that
      prints `BOOTSECT.DAT-OK\r\n` on COM1 and halts (or just `jmp $`)
@@ -215,9 +215,9 @@ Suggested L2 harness, analogous to existing PBR smoke tests:
 Same `qemu -trace blk_co_preadv` read-count gate could be used as a
 fallback (count > N), but the marker-string gate is tighter.
 
-## What usbwin will do with this
+## What bootsmith will do with this
 
-Once mkmsbr ships this, usbwin's `pipeline/xp_staging.rs` will gain a
+Once mkmsbr ships this, bootsmith's `pipeline/xp_staging.rs` will gain a
 new code path:
 
 ```rust
@@ -250,9 +250,9 @@ a small run-coalescing helper.
 ## Rough timeline ask
 
 ~1 hour of focused work by the agent who just rewrote
-`fat32_pbr_bootmgr` for CHS — same patterns, simpler problem. usbwin's
+`fat32_pbr_bootmgr` for CHS — same patterns, simpler problem. bootsmith's
 side is already substantially built (see `pipeline/fat32.rs`); the only
-remaining usbwin work is the run-coalescing helper (~20 lines) and the
+remaining bootsmith work is the run-coalescing helper (~20 lines) and the
 glue to call the new function.
 
 ## Provenance note

@@ -156,7 +156,7 @@ pub fn build_mbr(boot_code: &[u8], disk_sectors: u64) -> Result<[u8; 512], MbrEr
     // currently use a fixed test value (0xDEADBEEF) to probe whether the
     // BIOS cares about non-zero signature presence at all. If the L4
     // boot succeeds with this, the next step is `mbr_win7_with_signature
-    // (disk, sig: u32)` so usbwin can generate a real per-USB sig.
+    // (disk, sig: u32)` so bootsmith can generate a real per-USB sig.
     // TODO(v1.0): replace fixed value with caller-supplied parameter.
     mbr[0x1B8..0x1BC].copy_from_slice(&0xDEADBEEFu32.to_le_bytes());
 

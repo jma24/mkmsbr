@@ -1,10 +1,10 @@
-# NTLDR PBR findings from usbwin XP integration — 2026-05-19
+# NTLDR PBR findings from bootsmith XP integration — 2026-05-19
 
-Hardware-test failures surfaced two mkmsbr-side bugs during usbwin's
+Hardware-test failures surfaced two mkmsbr-side bugs during bootsmith's
 first attempt at booting a Windows XP install USB on the reference
 legacy-BIOS rig (Dell E6410).
 
-The setup: `usbwin --type windows-xp --boot-record mkmsbr` produced
+The setup: `bootsmith --type windows-xp --boot-record mkmsbr` produced
 a USB that, on boot, displays "`2_`" (literal '2' top-left + cursor)
 and halts. The diagnostic '2' is recognizable from this repo's PBR
 error-printer convention (stage-2 read failure marker).
@@ -121,20 +121,20 @@ unless the L2 fake-NTLDR fixture uses a BPB geometry distinct from
 what `newfs_msdos -F 32` produces on macOS.
 
 Worth checking: does L2 stage the same `newfs_msdos`-produced BPB
-that usbwin's pipeline produces? If L2 uses an `mtools`-formatted
+that bootsmith's pipeline produces? If L2 uses an `mtools`-formatted
 or synthetic BPB, geometry-dependent bugs in the LBA math will slip
 past L2 even at full fidelity.
 
-## What usbwin is doing in parallel
+## What bootsmith is doing in parallel
 
-usbwin is shipping a separate fix to its XP `--boot-record=ms-sys`
+bootsmith is shipping a separate fix to its XP `--boot-record=ms-sys`
 path: don't run `ms-sys --mbr` for XP mode (its XP-era boot code
 hardcodes drive 0x80 instead of preserving the BIOS-supplied DL,
-which fails on E6410-style USB-HDD emulation). usbwin will use
+which fails on E6410-style USB-HDD emulation). bootsmith will use
 mkmsbr's MBR for both XP backends; only the PBR backend is selected
 by the `--boot-record` flag.
 
 This is an unrelated bug from the same hardware-test session, fixed
-independently in the usbwin tree. Filed here for awareness because
+independently in the bootsmith tree. Filed here for awareness because
 it influences which combinations of (MBR backend × PBR backend) are
 worth testing as ms-sys / mkmsbr each evolve.
